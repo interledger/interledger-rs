@@ -18,6 +18,9 @@ pub const EMPTY_VARLEN_OCTETS_LEN: usize = predict_var_octet_string(0);
 /// Length of zero as a variable uint on the wire, `0x01 0x00`.
 pub const MIN_VARUINT_LEN: usize = 2;
 
+/// Minimum length of variable length timestamps used in btp on the wire.
+pub const MIN_VARLEN_TIMESTAMP_LEN: usize = predict_var_octet_string(15);
+
 /// Returns the size (in bytes) of the buffer that encodes a VarOctetString of
 /// `length` bytes.
 pub const fn predict_var_octet_string(length: usize) -> usize {

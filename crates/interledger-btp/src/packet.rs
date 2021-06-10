@@ -1,13 +1,15 @@
 use super::errors::{BtpPacketError, PacketTypeError};
 use bytes::{Buf, BufMut};
 use interledger_packet::{
-    oer::{BufOerExt, MutBufOerExt, VariableLengthTimestamp},
+    oer::{self, BufOerExt, MutBufOerExt, VariableLengthTimestamp},
     OerError,
 };
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::borrow::Cow;
 use std::str;
+
+const REQUEST_ID_LEN: usize = 4;
 
 pub trait Serializable<T> {
     fn from_bytes(bytes: &[u8]) -> Result<T, BtpPacketError>;
@@ -23,6 +25,12 @@ enum PacketType {
     Error = 2,
     Unknown,
 }
+
+impl PacketType {
+    /// Length on the wire.
+    const LEN: usize = 1;
+}
+
 impl From<u8> for PacketType {
     fn from(type_int: u8) -> Self {
         match type_int {
@@ -68,6 +76,11 @@ pub enum ContentType {
     ApplicationOctetStream,
     TextPlainUtf8,
     Unknown(u8),
+}
+
+impl ContentType {
+    /// Length of the ContentType on the wire
+    const LEN: usize = 1;
 }
 
 impl From<u8> for ContentType {
@@ -117,7 +130,7 @@ fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, BtpPacket
             Cow::Owned(protocol_name.to_owned())
         };
 
-        if reader.remaining() < 1 {
+        if reader.remaining() < ContentType::LEN {
             return Err(OerError::UnexpectedEof.into());
         }
         let content_type = ContentType::from(reader.get_u8());
@@ -162,8 +175,10 @@ pub struct BtpMessage {
 impl Serializable<BtpMessage> for BtpMessage {
     fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, BtpPacketError> {
         let mut reader = bytes;
-        // BtpMessage: packet type (1) + request_id (4) + protocol data (length checked in Oer)
-        if reader.remaining() < 1 + 4 {
+
+        const MIN_LEN: usize = PacketType::LEN + REQUEST_ID_LEN + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if reader.remaining() < MIN_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
         let packet_type = reader.get_u8();
@@ -203,8 +218,10 @@ pub struct BtpResponse {
 impl Serializable<BtpResponse> for BtpResponse {
     fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, BtpPacketError> {
         let mut reader = bytes;
-        // BtpReponse: packet type (1) + request_id (4) + protocol_data (length checked in Oer)
-        if reader.remaining() < 1 + 4 {
+
+        const MIN_LEN: usize = PacketType::LEN + REQUEST_ID_LEN + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if reader.remaining() < MIN_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
         let packet_type = reader.get_u8();
@@ -248,9 +265,11 @@ pub struct BtpError {
 impl Serializable<BtpError> for BtpError {
     fn from_bytes(bytes: &[u8]) -> Result<BtpError, BtpPacketError> {
         let mut reader = bytes;
-        // BtpError: packet type (1) + request_id (4) + content (checked in Oer) + code (3) + rest
-        // of data (length checked in Oer)
-        if reader.remaining() < 1 + 4 {
+
+        const MIN_HEADER_LEN: usize =
+            PacketType::LEN + REQUEST_ID_LEN + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if reader.remaining() < MIN_HEADER_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
         let packet_type = reader.get_u8();
@@ -262,10 +281,18 @@ impl Serializable<BtpError> for BtpError {
 
         check_no_trailing_bytes(reader)?;
 
-        if contents.remaining() < 3 {
+        const CODE_LEN: usize = 3;
+
+        const MIN_CONTENTS_LEN: usize = CODE_LEN
+            + oer::EMPTY_VARLEN_OCTETS_LEN
+            + oer::MIN_VARLEN_TIMESTAMP_LEN
+            + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if contents.remaining() < MIN_CONTENTS_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
-        let mut code: [u8; 3] = [0; 3];
+
+        let mut code = [0u8; CODE_LEN];
         contents.copy_to_slice(&mut code);
         let name = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
         let triggered_at = contents.read_variable_length_timestamp()?;
