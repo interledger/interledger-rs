@@ -26,7 +26,7 @@ pub enum StreamPacketError {
     NotEnoughValidFrames,
     #[error("Trailing bytes error: Inner")]
     TrailingInnerBytes,
-    #[error("Oer Error: {0}")]
+    #[error("Invalid Packet: {0}")]
     Oer(#[from] OerError),
     #[error("Ilp PacketType Error: {0}")]
     IlpPacketType(#[from] IlpPacketTypeError),

@@ -71,8 +71,8 @@ impl fmt::Display for CcpPacketError {
             CcpPacketError::UnexpectedCondition(c) => {
                 write!(fmt, "Invalid Packet: Wrong condition: {:?}", HexString(c))
             }
-            CcpPacketError::Oer(err) => write!(fmt, "Oer Error {:?}", err),
-            CcpPacketError::Utf8Conversion => write!(fmt, "Utf-8 Conversion Error"),
+            CcpPacketError::Oer(err) => write!(fmt, "Invalid Packet: {}", err),
+            CcpPacketError::Utf8Conversion => write!(fmt, "Unable to convert data to utf-8"),
             CcpPacketError::AddresssInvalid(err) => write!(fmt, "Address Invalid {:?}", err),
         }
     }

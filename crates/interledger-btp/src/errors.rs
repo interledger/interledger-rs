@@ -9,9 +9,9 @@ pub enum BtpPacketError {
     Utf8Err(#[from] Utf8Error),
     #[error("Chrono Error: {0}")]
     ChronoErr(#[from] chrono::ParseError),
-    #[error("PacketType Error: {0}")]
+    #[error("Invalid Packet: {0}")]
     PacketType(#[from] PacketTypeError),
-    #[error("Oer Error: {0:?}")]
+    #[error("Invalid Packet: {0}")]
     Oer(#[from] OerError),
 }
 
