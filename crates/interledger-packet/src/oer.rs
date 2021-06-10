@@ -628,6 +628,42 @@ mod test_buf_oer_ext {
             assert_eq!(expected, ts.inner.to_string());
         }
     }
+
+    #[test]
+    fn invalid_variable_length_timestamps() {
+        use std::fmt::Write;
+
+        #[rustfmt::skip]
+        let invalid: &[(u32, &[u8], &str)] = &[
+            (line!(), b"20171224235312.431+0200", "Invalid length for variable length timestamp: 23"),
+            (line!(), b"20171224215312.4318Z",    "Invalid length for variable length timestamp: 20"),
+            (line!(), b"20171224161432,279Z",     "Input failed to parse as timestamp"),
+            (line!(), b"20171324161432.279Z",     "Invalid variable length datetime: input is out of range"),
+            // (line!(), b"20171224230000.20Z", "according to RFC-0030 this is an invalid timestamp but it doesn't appear to be"),
+            (line!(), b"20171224230000.Z",        "Invalid length for variable length timestamp: 16"),
+            (line!(), b"20171224240000Z",         "Invalid variable length datetime: input is out of range"),
+            (line!(), b"2017122421531Z",          "Invalid length for variable length timestamp: 14"),
+            (line!(), b"201712242153Z",           "Invalid length for variable length timestamp: 13"),
+            (line!(), b"2017122421Z",             "Invalid length for variable length timestamp: 11"),
+        ];
+
+        let mut buffer = BytesMut::with_capacity(1 + invalid[0].1.len());
+        let mut s = String::new();
+
+        for &(line, example, error) in invalid {
+            buffer.clear();
+            s.clear();
+
+            buffer.put_var_octet_string(example);
+            let e = buffer
+                .as_ref()
+                .read_variable_length_timestamp()
+                .unwrap_err();
+
+            write!(s, "{}", e).unwrap();
+            assert_eq!(error, s, "on line {}", line);
+        }
+    }
 }
 
 #[cfg(test)]
