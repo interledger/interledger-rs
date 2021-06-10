@@ -4,7 +4,7 @@ use super::{
 };
 use bytes::{Buf, BufMut, BytesMut};
 use interledger_packet::{
-    oer::{BufOerExt, MutBufOerExt},
+    oer::{self, BufOerExt, MutBufOerExt},
     Address, OerError, PacketType as IlpPacketType,
 };
 #[cfg(test)]
@@ -14,6 +14,9 @@ use tracing::warn;
 
 /// The Stream Protocol's version
 const STREAM_VERSION: u8 = 1;
+
+/// Length of the stream protocol version on the wire
+const STREAM_VERSION_LEN: usize = 1;
 
 /// Builder for [Stream Packets](https://interledger.org/rfcs/0029-stream/#52-stream-packet)
 pub struct StreamPacketBuilder<'a> {
@@ -167,8 +170,14 @@ impl StreamPacket {
     fn from_bytes_unencrypted(mut buffer_unencrypted: BytesMut) -> Result<Self, StreamPacketError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
-        // StreamPacket: version (1) + ILP Packet type (1) + other data (length checked in Oer)
-        if reader.remaining() < 1 + 1 {
+
+        const MIN_LEN: usize = STREAM_VERSION_LEN
+            + IlpPacketType::LEN
+            + oer::MIN_VARUINT_LEN
+            + oer::MIN_VARUINT_LEN
+            + oer::MIN_VARUINT_LEN;
+
+        if reader.remaining() < MIN_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
         let version = reader.get_u8();
@@ -522,7 +531,9 @@ pub struct ConnectionCloseFrame<'a> {
 impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         // ConnectionCloseFrame: ErrorCode (1) + message (length checked in Oer)
-        if reader.remaining() < 1 {
+        const MIN_LEN: usize = 1 + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if reader.remaining() < MIN_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
         let code = ErrorCode::from(reader.get_u8());
