@@ -12,9 +12,15 @@ const LOWER_SEVEN_BITS: u8 = 0x7f;
 // NOTE: this is stricly different than packet::INTERLEDGER_TIMESTAMP_FORMAT
 static VARIABLE_LENGTH_TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S%.3fZ";
 
+/// Smallest allowed varlen octets container length, which is 1 byte for `0x00`.
+pub const EMPTY_VARLEN_OCTETS_LEN: usize = predict_var_octet_string(0);
+
+/// Length of zero as a variable uint on the wire, `0x01 0x00`.
+pub const MIN_VARUINT_LEN: usize = 2;
+
 /// Returns the size (in bytes) of the buffer that encodes a VarOctetString of
 /// `length` bytes.
-pub fn predict_var_octet_string(length: usize) -> usize {
+pub const fn predict_var_octet_string(length: usize) -> usize {
     if length < 128 {
         1 + length
     } else {
@@ -25,7 +31,7 @@ pub fn predict_var_octet_string(length: usize) -> usize {
 
 /// Returns the minimum number of bytes needed to encode the `value` without leading zeroes in
 /// big-endian representation.
-pub fn predict_var_uint_size(value: u64) -> u8 {
+pub const fn predict_var_uint_size(value: u64) -> u8 {
     // avoid branching on zero by always orring one; it will not have any effect on other inputs
     let value = value | 1;
 
