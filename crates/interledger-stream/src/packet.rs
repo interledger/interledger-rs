@@ -194,6 +194,8 @@ impl StreamPacket {
 
         let mut reader = &buffer_unencrypted[frames_offset..];
         for _ in 0..num_frames {
+            // FIXME: with this loop, it would seem that all of the frames are iterated over twice
+            // to get to junk_data.
             // First byte is the frame type
             reader.skip(1)?;
             reader.skip_var_octet_string()?;
