@@ -46,6 +46,9 @@ impl FromStr for Address {
 }
 
 impl Address {
+    /// Smallest size of a valid address on the wire, including the length prefix.
+    pub const MIN_LEN: usize = crate::oer::predict_var_octet_string("g.1".len());
+
     fn try_from_buf<B: bytes::Buf>(mut buf: B) -> Result<Self, AddressError> {
         // https://interledger.org/rfcs/0015-ilp-addresses/#address-requirements
         if buf.remaining() > MAX_ADDRESS_LENGTH {
