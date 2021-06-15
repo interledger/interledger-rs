@@ -1,8 +1,7 @@
-use byteorder::ReadBytesExt;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use interledger_packet::{
     oer::{predict_var_octet_string, BufOerExt, MutBufOerExt},
-    Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
+    Address, Fulfill, FulfillBuilder, OerError, ParseError, Prepare, PrepareBuilder,
 };
 use once_cell::sync::Lazy;
 use std::{
@@ -95,7 +94,10 @@ impl TryFrom<Bytes> for IldcpResponse {
         let buf = reader.read_var_octet_string()?;
         let ilp_address = Address::try_from(buf)?;
 
-        let asset_scale = reader.read_u8()?;
+        if reader.remaining() < 1 {
+            return Err(ParseError::Oer(OerError::UnexpectedEof));
+        }
+        let asset_scale = reader.get_u8();
 
         let asset_code_offset = buffer_len - reader.len();
         reader.skip_var_octet_string()?;

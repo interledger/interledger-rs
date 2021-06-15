@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use byteorder::ReadBytesExt;
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use core::borrow::Borrow;
 use interledger_packet::{
     oer::BufOerExt, Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
@@ -73,19 +72,17 @@ where
         reader.skip(ECHO_PREFIX_LEN).unwrap();
 
         // check echo packet type
-        let echo_packet_type = match reader.read_u8() {
-            Ok(value) => value,
-            Err(error) => {
-                eprintln!("Could not read packet type: {:?}", error);
-                return Err(RejectBuilder {
-                    code: ErrorCode::F01_INVALID_PACKET,
-                    message: b"Could not read echo packet type.",
-                    triggered_by: Some(&ilp_address),
-                    data: &[],
-                }
-                .build());
+        if reader.remaining() < 1 {
+            eprintln!("Could not read packet type: Unexpected Eof");
+            return Err(RejectBuilder {
+                code: ErrorCode::F01_INVALID_PACKET,
+                message: b"Could not read echo packet type.",
+                triggered_by: Some(&ilp_address),
+                data: &[],
             }
-        };
+            .build());
+        }
+        let echo_packet_type = reader.get_u8();
         if echo_packet_type == EchoPacketType::Response as u8 {
             // if the echo packet type is Response, just pass it to the next service
             // so that the initiator could handle this packet

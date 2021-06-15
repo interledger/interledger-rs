@@ -1,15 +1,13 @@
-use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{BufMut, Bytes};
+use bytes::{Buf, BufMut, Bytes};
 use interledger_packet::{
     hex::HexString,
-    oer::{BufOerExt, MutBufOerExt},
-    Address, AddressError, Fulfill, FulfillBuilder, Prepare, PrepareBuilder,
+    oer::{self, BufOerExt, MutBufOerExt},
+    Address, AddressError, Fulfill, FulfillBuilder, OerError, Prepare, PrepareBuilder,
 };
 use once_cell::sync::Lazy;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::{self, Debug},
-    io::Read,
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
@@ -25,6 +23,13 @@ const FLAG_OPTIONAL: u8 = 0x80;
 const FLAG_TRANSITIVE: u8 = 0x40;
 const FLAG_PARTIAL: u8 = 0x20;
 const FLAG_UTF8: u8 = 0x10;
+
+const ROUTING_TABLE_ID_LEN: usize = 16;
+
+/// All epochs are u32
+const EPOCH_LEN: usize = 4;
+
+const AUTH_LEN: usize = 32;
 
 pub static CCP_RESPONSE: Lazy<Fulfill> = Lazy::new(|| {
     FulfillBuilder {
@@ -44,7 +49,7 @@ pub enum CcpPacketError {
     PacketExpired,
     UnexpectedDestination(Address),
     UnexpectedCondition([u8; 32]),
-    IOError,
+    Oer(OerError),
     Utf8Conversion,
     AddresssInvalid(AddressError),
 }
@@ -66,16 +71,16 @@ impl fmt::Display for CcpPacketError {
             CcpPacketError::UnexpectedCondition(c) => {
                 write!(fmt, "Invalid Packet: Wrong condition: {:?}", HexString(c))
             }
-            CcpPacketError::IOError => write!(fmt, "I/O Error"),
-            CcpPacketError::Utf8Conversion => write!(fmt, "Utf-8 Conversion Error"),
+            CcpPacketError::Oer(err) => write!(fmt, "Invalid Packet: {}", err),
+            CcpPacketError::Utf8Conversion => write!(fmt, "Unable to convert data to utf-8"),
             CcpPacketError::AddresssInvalid(err) => write!(fmt, "Address Invalid {:?}", err),
         }
     }
 }
 
-impl From<std::io::Error> for CcpPacketError {
-    fn from(_err: std::io::Error) -> Self {
-        CcpPacketError::IOError
+impl From<OerError> for CcpPacketError {
+    fn from(err: OerError) -> Self {
+        CcpPacketError::Oer(err)
     }
 }
 
@@ -101,6 +106,11 @@ pub enum Mode {
     Sync = 1,
 }
 
+impl Mode {
+    /// Length of Mode on the wire (bytes)
+    const LEN: usize = 1;
+}
+
 impl TryFrom<u8> for Mode {
     type Error = CcpPacketError;
 
@@ -119,7 +129,7 @@ impl TryFrom<u8> for Mode {
 #[derive(Clone, PartialEq)]
 pub struct RouteControlRequest {
     pub mode: Mode,
-    pub last_known_routing_table_id: [u8; 16],
+    pub last_known_routing_table_id: [u8; ROUTING_TABLE_ID_LEN],
     pub last_known_epoch: u32,
     pub features: Vec<String>,
 }
@@ -179,10 +189,20 @@ impl RouteControlRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
-        let mode = Mode::try_from(data.read_u8()?)?;
-        let mut last_known_routing_table_id: [u8; 16] = [0; 16];
-        data.read_exact(&mut last_known_routing_table_id)?;
-        let last_known_epoch = data.read_u32::<BigEndian>()?;
+        const MIN_LEN: usize = Mode::LEN
+            + ROUTING_TABLE_ID_LEN
+            // u32
+            + EPOCH_LEN
+            // zero features would be the minimum
+            + oer::MIN_VARUINT_LEN;
+
+        if data.remaining() < MIN_LEN {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let mode = Mode::try_from(data.get_u8())?;
+        let mut last_known_routing_table_id = [0; ROUTING_TABLE_ID_LEN];
+        data.copy_to_slice(&mut last_known_routing_table_id);
+        let last_known_epoch = data.get_u32();
 
         // TODO: see discussion for Route::try_from(&mut &[u8])
         let num_features = data.read_var_uint()?;
@@ -242,14 +262,23 @@ impl TryFrom<&mut &[u8]> for RouteProp {
 
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
     fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
-        let meta = data.read_u8()?;
+        const FLAG_LEN: usize = 1;
+        const ID_LEN: usize = 2;
+
+        const MIN_LEN: usize = FLAG_LEN + ID_LEN + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if data.remaining() < MIN_LEN {
+            return Err(OerError::UnexpectedEof.into());
+        }
+
+        let meta = data.get_u8();
 
         let is_optional = meta & FLAG_OPTIONAL != 0;
         let is_transitive = meta & FLAG_TRANSITIVE != 0;
         let is_partial = meta & FLAG_PARTIAL != 0;
         let is_utf8 = meta & FLAG_UTF8 != 0;
 
-        let id = data.read_u16::<BigEndian>()?;
+        let id = data.get_u16();
         let value = Bytes::copy_from_slice(data.read_var_octet_string()?);
 
         Ok(RouteProp {
@@ -293,7 +322,7 @@ pub(crate) struct Route {
     // TODO switch this to use the Address type so we don't need separate parsing logic when implementing Debug
     pub(crate) prefix: String,
     pub(crate) path: Vec<String>,
-    pub(crate) auth: [u8; 32],
+    pub(crate) auth: [u8; AUTH_LEN],
     pub(crate) props: Vec<RouteProp>,
 }
 
@@ -328,8 +357,11 @@ impl TryFrom<&mut &[u8]> for Route {
         for _i in 0..path_len {
             path.push(str::from_utf8(data.read_var_octet_string()?)?.to_string());
         }
-        let mut auth: [u8; 32] = [0; 32];
-        data.read_exact(&mut auth)?;
+        if data.remaining() < AUTH_LEN {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let mut auth = [0u8; AUTH_LEN];
+        data.copy_to_slice(&mut auth);
 
         // TODO: see discussion above
         let prop_len = data.read_var_uint()? as usize;
@@ -373,7 +405,7 @@ impl Route {
 
 #[derive(Clone, PartialEq)]
 pub struct RouteUpdateRequest {
-    pub(crate) routing_table_id: [u8; 16],
+    pub(crate) routing_table_id: [u8; ROUTING_TABLE_ID_LEN],
     pub(crate) current_epoch_index: u32,
     pub(crate) from_epoch_index: u32,
     pub(crate) to_epoch_index: u32,
@@ -439,12 +471,27 @@ impl RouteUpdateRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
-        let mut routing_table_id: [u8; 16] = [0; 16];
-        data.read_exact(&mut routing_table_id)?;
-        let current_epoch_index = data.read_u32::<BigEndian>()?;
-        let from_epoch_index = data.read_u32::<BigEndian>()?;
-        let to_epoch_index = data.read_u32::<BigEndian>()?;
-        let hold_down_time = data.read_u32::<BigEndian>()?;
+        const HOLD_DOWN_TIME_LEN: usize = 4;
+
+        const MIN_LEN: usize = ROUTING_TABLE_ID_LEN
+            // current_epoch_index, from_epoch_index, to_epoch_index
+            + EPOCH_LEN * 3
+            // hold_down_time
+            + HOLD_DOWN_TIME_LEN
+            + Address::MIN_LEN
+            + interledger_packet::oer::MIN_VARUINT_LEN
+            + interledger_packet::oer::MIN_VARUINT_LEN;
+
+        if data.remaining() < MIN_LEN {
+            return Err(OerError::UnexpectedEof.into());
+        }
+
+        let mut routing_table_id = [0u8; ROUTING_TABLE_ID_LEN];
+        data.copy_to_slice(&mut routing_table_id);
+        let current_epoch_index = data.get_u32();
+        let from_epoch_index = data.get_u32();
+        let to_epoch_index = data.get_u32();
+        let hold_down_time = data.get_u32();
         let speaker = Address::try_from(data.read_var_octet_string()?)?;
 
         // TODO: see discussion for Route::try_from(&mut &[u8])
@@ -515,6 +562,15 @@ mod route_control_request {
     use hex_literal::hex;
 
     #[test]
+    fn deserialize_too_short() {
+        let prepare = Prepare::try_from(BytesMut::from(CONTROL_REQUEST_SERIALIZED)).unwrap();
+        let data = prepare.data();
+        for len in 0..data.len() {
+            RouteControlRequest::try_from_data(&data[..len]).unwrap_err();
+        }
+    }
+
+    #[test]
     fn deserialize() {
         let prepare = Prepare::try_from(BytesMut::from(CONTROL_REQUEST_SERIALIZED)).unwrap();
         let request = RouteControlRequest::try_from_without_expiry(&prepare).unwrap();
@@ -568,6 +624,15 @@ mod route_update_request {
     use hex_literal::hex;
 
     #[test]
+    fn deserialize_too_short() {
+        let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_COMPLEX_SERIALIZED)).unwrap();
+        let data = prepare.data();
+        for len in 0..data.len() {
+            RouteUpdateRequest::try_from_data(&data[..len]).unwrap_err();
+        }
+    }
+
+    #[test]
     fn deserialize() {
         let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_SIMPLE_SERIALIZED)).unwrap();
         let request = RouteUpdateRequest::try_from_without_expiry(&prepare).unwrap();
@@ -580,6 +645,15 @@ mod route_update_request {
         let test_prepare =
             Prepare::try_from(BytesMut::from(UPDATE_REQUEST_SIMPLE_SERIALIZED)).unwrap();
         assert_eq!(prepare.data(), test_prepare.data());
+    }
+
+    #[test]
+    fn deserialize_complex_too_short() {
+        let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_COMPLEX_SERIALIZED)).unwrap();
+        let data = prepare.data();
+        for len in 0..data.len() {
+            RouteUpdateRequest::try_from_data(&data[..len]).unwrap_err();
+        }
     }
 
     #[test]

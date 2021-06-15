@@ -18,9 +18,9 @@ const MAX_ADDRESS_LENGTH: usize = 1023;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AddressError {
-    #[error("Invalid Address: Invalid address length: {0}")]
+    #[error("Invalid address length: {0}")]
     InvalidLength(usize),
-    #[error("Invalid Address: Invalid address format")]
+    #[error("Invalid address format")]
     InvalidFormat,
 }
 
@@ -46,6 +46,9 @@ impl FromStr for Address {
 }
 
 impl Address {
+    /// Smallest size of a valid address on the wire, including the length prefix.
+    pub const MIN_LEN: usize = crate::oer::predict_var_octet_string("g.1".len());
+
     fn try_from_buf<B: bytes::Buf>(mut buf: B) -> Result<Self, AddressError> {
         // https://interledger.org/rfcs/0015-ilp-addresses/#address-requirements
         if buf.remaining() > MAX_ADDRESS_LENGTH {
@@ -280,7 +283,7 @@ mod test_address {
         );
         assert_de_tokens_error::<Address>(
             &[Token::BorrowedStr("test.alice ")],
-            "Invalid Address: Invalid address format",
+            "Invalid address format",
         );
     }
 

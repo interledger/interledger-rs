@@ -1,16 +1,15 @@
 use std::fmt;
-use std::io::prelude::*;
 use std::str;
 use std::time::SystemTime;
 
-use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
-use crate::hex::HexString;
 use crate::oer::{self, BufOerExt, MutBufOerExt};
+use crate::{hex::HexString, OerError};
 use crate::{Address, ErrorCode, PacketTypeError, ParseError, TrailingBytesError};
 use std::convert::TryFrom;
+use std::io::Write;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -28,6 +27,11 @@ pub enum PacketType {
     Prepare = 12,
     Fulfill = 13,
     Reject = 14,
+}
+
+impl PacketType {
+    /// Length of the packet type on the wire
+    pub const LEN: usize = 1;
 }
 
 // Gets the packet type from a u8 array
@@ -126,12 +130,25 @@ impl TryFrom<BytesMut> for Prepare {
     fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
-        let amount = content.read_u64::<BigEndian>()?;
+
+        const MIN_LEN: usize = AMOUNT_LEN
+            + EXPIRY_LEN
+            + CONDITION_LEN
+            // destination
+            + Address::MIN_LEN
+            // data
+            + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if content.remaining() < MIN_LEN {
+            return Err(OerError::UnexpectedEof.into());
+        }
+
+        let amount = content.get_u64();
 
         // Fixed Length DateTime format - RFC 0027
         // https://github.com/interledger/rfcs/blob/2dfdcf47ac52489a4ad473a5d869cd9f0217db67/0027-interledger-protocol-4/0027-interledger-protocol-4.md#ilp-prepare
         let mut read_expires_at = [0x00; 17];
-        content.read_exact(&mut read_expires_at)?;
+        content.copy_to_slice(&mut read_expires_at);
 
         if !read_expires_at
             .iter()
@@ -429,8 +446,14 @@ impl TryFrom<BytesMut> for Reject {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Reject, &buffer)?;
         let content_len = content.len();
 
+        const MIN_LEN: usize = ERROR_CODE_LEN + oer::EMPTY_VARLEN_OCTETS_LEN * 3;
+
+        if content.remaining() < MIN_LEN {
+            return Err(OerError::UnexpectedEof.into());
+        }
+
         let mut code = [0; 3];
-        content.read_exact(&mut code)?;
+        content.copy_to_slice(&mut code);
 
         let code = ErrorCode::new(code).ok_or(ParseError::ErrorCodeConversion)?;
 
@@ -566,13 +589,16 @@ fn deserialize_envelope(
     packet_type: PacketType,
     mut reader: &[u8],
 ) -> Result<(usize, &[u8]), ParseError> {
-    let got_type = reader.read_u8()?;
+    if reader.remaining() < PacketType::LEN {
+        return Err(OerError::UnexpectedEof.into());
+    }
+    let got_type = reader.get_u8();
 
     if got_type != packet_type as u8 {
         return Err(PacketTypeError::Unexpected(got_type, packet_type as u8).into());
     }
 
-    let content_offset = 1 + {
+    let content_offset = PacketType::LEN + {
         // This could probably be determined a better way...
         let mut peek = reader;
         let before = peek.len();
@@ -769,7 +795,7 @@ mod test_packet_type {
     #[test]
     fn try_from_empty() {
         assert_eq!(
-            "Invalid Packet: Unknown packet type",
+            "Unknown packet type",
             &PacketType::try_from(&[][..]).unwrap_err().to_string()
         );
     }

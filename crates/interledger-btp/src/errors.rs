@@ -1,15 +1,18 @@
+use interledger_packet::OerError;
 use std::str::Utf8Error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BtpPacketError {
-    #[error("I/O Error: {0}")]
-    IoErr(#[from] std::io::Error),
+    #[error("extra trailing bytes")]
+    TrailingBytesErr,
     #[error("UTF-8 Error: {0}")]
     Utf8Err(#[from] Utf8Error),
     #[error("Chrono Error: {0}")]
     ChronoErr(#[from] chrono::ParseError),
-    #[error("PacketType Error: {0}")]
+    #[error("Invalid Packet: {0}")]
     PacketType(#[from] PacketTypeError),
+    #[error("Invalid Packet: {0}")]
+    Oer(#[from] OerError),
 }
 
 #[derive(Debug, thiserror::Error)]
