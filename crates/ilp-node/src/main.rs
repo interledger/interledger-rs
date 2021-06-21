@@ -116,7 +116,7 @@ fn cmdline_configuration<'b>(version: &'b str) -> clap::App<'static, 'b> {
     // - Addresses to which other services are bound
     //     - `xxx_bind_address`
     App::new("ilp-node")
-        .about("Run an Interledger.rs node (sender, connector, receiver bundle)")
+        .about("ALFA: Run an Interledger.rs node (sender, connector, receiver bundle)")
         .version(version)
     .args(&[
         // Positional arguments
