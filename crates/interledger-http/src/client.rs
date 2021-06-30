@@ -9,7 +9,7 @@ use reqwest::{
     Client, ClientBuilder, Response as HttpResponse,
 };
 use secrecy::{ExposeSecret, SecretString};
-use std::{convert::TryFrom, iter::FromIterator, marker::PhantomData, sync::Arc, time::Duration};
+use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
 use tracing::{error, trace};
 
 /// The HttpClientService implements [OutgoingService](../../interledger_service/trait.OutgoingService)
@@ -158,7 +158,7 @@ async fn parse_packet_from_response(response: HttpResponse, ilp_address: Address
         })
         .await?;
 
-    let body = BytesMut::from_iter(body.into_iter());
+    let body = body.into_iter().collect::<BytesMut>();
     match Packet::try_from(body) {
         Ok(Packet::Fulfill(fulfill)) => Ok(fulfill),
         Ok(Packet::Reject(reject)) => Err(reject),
