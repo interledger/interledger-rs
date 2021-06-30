@@ -101,69 +101,59 @@ mod tests {
         let body_incorrect = r#"{"other_key": 0}"#;
 
         // `content-type` should be provided.
-        assert_eq!(
-            request().body(body_correct).matches(&json_filter).await,
-            false
-        );
+        assert!(!request().body(body_correct).matches(&json_filter).await);
 
         // Should accept only "application/json" or "application/json; charset=utf-8"
-        assert_eq!(
-            request()
+        assert!(
+            !request()
                 .body(body_correct)
                 .header("content-type", "text/plain")
                 .matches(&json_filter)
-                .await,
-            false
+                .await
         );
-        assert_eq!(
+        assert!(
             request()
                 .body(body_correct)
                 .header("content-type", "application/json")
                 .matches(&json_filter)
-                .await,
-            true
+                .await
         );
-        assert_eq!(
-            request()
+        assert!(
+            !request()
                 .body(body_correct)
                 .header("content-type", "application/json; charset=ascii")
                 .matches(&json_filter)
-                .await,
-            false
+                .await
         );
-        assert_eq!(
+        assert!(
             request()
                 .body(body_correct)
                 .header("content-type", "application/json; charset=utf-8")
                 .matches(&json_filter)
-                .await,
-            true
+                .await
         );
-        assert_eq!(
+        assert!(
             request()
                 .body(body_correct)
                 .header("content-type", "application/json; charset=UTF-8")
                 .matches(&json_filter)
-                .await,
-            true
+                .await
         );
 
         // Should accept only bodies that can be deserialized
-        assert_eq!(
-            request()
+        assert!(
+            !request()
                 .body(body_incorrect)
                 .header("content-type", "application/json")
                 .matches(&json_filter)
-                .await,
-            false
+                .await
         );
-        assert_eq!(
-            request()
+        assert!(
+            !request()
                 .body(body_incorrect)
                 .header("content-type", "application/json; charset=utf-8")
                 .matches(&json_filter)
-                .await,
-            false
+                .await
         );
     }
 }

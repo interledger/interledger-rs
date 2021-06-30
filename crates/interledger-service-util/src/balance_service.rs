@@ -660,8 +660,8 @@ mod tests {
 
         tokio::time::delay_for(Duration::from_millis(100u64)).await;
         mock.assert();
-        assert_eq!(*store.refunded_settlement.read(), false);
-        assert_eq!(*store.rejected_message.read(), false);
+        assert!(!*store.refunded_settlement.read());
+        assert!(!*store.rejected_message.read());
     }
 
     #[tokio::test]
@@ -683,8 +683,8 @@ mod tests {
 
         tokio::time::delay_for(Duration::from_millis(100u64)).await;
         mock.assert();
-        assert_eq!(*store.refunded_settlement.read(), false);
-        assert_eq!(*store.rejected_message.read(), false);
+        assert!(!*store.refunded_settlement.read());
+        assert!(!*store.rejected_message.read());
     }
 
     #[tokio::test]
@@ -706,8 +706,8 @@ mod tests {
 
         tokio::time::delay_for(Duration::from_millis(100u64)).await;
         mock.assert();
-        assert_eq!(*store.refunded_settlement.read(), true);
-        assert_eq!(*store.rejected_message.read(), false);
+        assert!(*store.refunded_settlement.read());
+        assert!(!*store.rejected_message.read());
     }
 
     #[tokio::test]
@@ -734,7 +734,7 @@ mod tests {
 
         tokio::time::delay_for(Duration::from_millis(100u64)).await;
         mock.assert();
-        assert_eq!(*store.rejected_message.read(), true);
+        assert!(*store.rejected_message.read());
     }
 
     #[derive(Debug, Clone)]

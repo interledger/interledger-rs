@@ -187,7 +187,7 @@ mod tests {
         let mut service = RateLimitService::new(store.clone(), next);
         let fulfill = service.handle_request(TEST_REQUEST.clone()).await.unwrap();
         assert_eq!(fulfill.data(), b"test data");
-        assert_eq!(*store.was_refunded.read(), false);
+        assert!(!*store.was_refunded.read());
     }
 
     #[tokio::test]
@@ -208,7 +208,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
-        assert_eq!(*store.was_refunded.read(), true);
+        assert!(*store.was_refunded.read());
     }
 
     #[tokio::test]
@@ -227,7 +227,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T05_RATE_LIMITED);
-        assert_eq!(*store.was_refunded.read(), false);
+        assert!(!*store.was_refunded.read());
     }
 
     #[tokio::test]
@@ -246,7 +246,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T04_INSUFFICIENT_LIQUIDITY);
-        assert_eq!(*store.was_refunded.read(), false);
+        assert!(!*store.was_refunded.read());
     }
 
     #[tokio::test]
@@ -265,7 +265,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
-        assert_eq!(*store.was_refunded.read(), false);
+        assert!(!*store.was_refunded.read());
     }
 
     #[derive(Debug, Clone)]
