@@ -53,7 +53,7 @@ async-trait = { version = "0.1.22", default-features = false }
 thiserror = { version = "1.0.10", default-features = false }
 
 # redis feature
-redis_crate = { package = "redis", version = "0.15.1", default-features = false, features = ["tokio-rt-core"], optional = true }
+redis_crate = { package = "redis", version = "0.21.0", optional = true, default-features = false, features = ["tokio-comp", "script"] }
 
 [dev-dependencies]
 rand = { version = "0.7.2", default-features = false }

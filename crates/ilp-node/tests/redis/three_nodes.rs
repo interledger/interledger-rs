@@ -12,11 +12,11 @@ async fn three_nodes() {
 
     // Each node will use its own DB within the redis instance
     let mut connection_info1 = context.get_client_connection_info();
-    connection_info1.db = 1;
+    connection_info1.redis.db = 1;
     let mut connection_info2 = context.get_client_connection_info();
-    connection_info2.db = 2;
+    connection_info2.redis.db = 2;
     let mut connection_info3 = context.get_client_connection_info();
-    connection_info3.db = 3;
+    connection_info3.redis.db = 3;
 
     let node1_http = get_open_port(None);
     let node1_settlement = get_open_port(None);

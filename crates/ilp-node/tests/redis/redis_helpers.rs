@@ -13,11 +13,17 @@ use std::time::Duration;
 
 #[allow(unused)]
 pub fn connection_info_to_string(info: ConnectionInfo) -> String {
-    match info.addr.as_ref() {
-        ConnectionAddr::Tcp(url, port) => format!("redis://{}:{}/{}", url, port, info.db),
+    match info.addr {
+        ConnectionAddr::Tcp(url, port) => format!("redis://{}:{}/{}", url, port, info.redis.db),
         ConnectionAddr::Unix(path) => {
-            format!("redis+unix:{}?db={}", path.to_str().unwrap(), info.db)
+            format!("redis+unix:{}?db={}", path.to_str().unwrap(), info.redis.db)
         }
+        // FIXME: no idea what this is used for
+        ConnectionAddr::TcpTls {
+            host,
+            port,
+            insecure,
+        } => todo!(),
     }
 }
 
@@ -164,9 +170,12 @@ impl TestContext {
         let server = RedisServer::new();
 
         let client = redis::Client::open(redis::ConnectionInfo {
-            addr: Box::new(server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         })
         .unwrap();
         let mut con;
@@ -195,9 +204,12 @@ impl TestContext {
     // This one was added and not in the original file
     pub fn get_client_connection_info(&self) -> redis::ConnectionInfo {
         redis::ConnectionInfo {
-            addr: Box::new(self.server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: self.server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         }
     }
 

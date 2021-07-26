@@ -206,9 +206,12 @@ mod redis_helpers {
             let server = RedisServer::new();
 
             let client = redis_crate::Client::open(redis_crate::ConnectionInfo {
-                addr: Box::new(server.get_client_addr().clone()),
-                db: 0,
-                passwd: None,
+                addr: server.get_client_addr().clone(),
+                redis: redis_crate::RedisConnectionInfo {
+                    db: 0,
+                    username: None,
+                    password: None,
+                },
             })
             .unwrap();
             let mut con;
@@ -237,9 +240,12 @@ mod redis_helpers {
         // This one was added and not in the original file
         pub fn get_client_connection_info(&self) -> redis_crate::ConnectionInfo {
             redis_crate::ConnectionInfo {
-                addr: Box::new(self.server.get_client_addr().clone()),
-                db: 0,
-                passwd: None,
+                addr: self.server.get_client_addr().clone(),
+                redis: redis_crate::RedisConnectionInfo {
+                    db: 0,
+                    username: None,
+                    password: None,
+                },
             }
         }
 

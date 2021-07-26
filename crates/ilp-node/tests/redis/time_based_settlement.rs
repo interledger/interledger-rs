@@ -23,9 +23,9 @@ async fn time_based_settlement() {
     let context = TestContext::new();
 
     let mut node_a_connections = context.get_client_connection_info();
-    node_a_connections.db = 1;
+    node_a_connections.redis.db = 1;
     let mut node_b_connections = context.get_client_connection_info();
-    node_b_connections.db = 2;
+    node_b_connections.redis.db = 2;
 
     let node_a_http = get_open_port(None);
     let node_a_settlement = get_open_port(None);

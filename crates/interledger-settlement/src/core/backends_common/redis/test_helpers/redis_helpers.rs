@@ -113,9 +113,12 @@ impl TestContext {
         let server = RedisServer::new();
 
         let client = redis::Client::open(redis::ConnectionInfo {
-            addr: Box::new(server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         })
         .unwrap();
         let mut con;
@@ -144,9 +147,12 @@ impl TestContext {
     // This one was added and not in the original file
     pub fn get_client_connection_info(&self) -> redis::ConnectionInfo {
         redis::ConnectionInfo {
-            addr: Box::new(self.server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: self.server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         }
     }
 

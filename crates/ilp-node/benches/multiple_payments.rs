@@ -36,9 +36,9 @@ fn multiple_payments_btp(c: &mut Criterion) {
     let context = TestContext::new();
 
     let mut connection_info1 = context.get_client_connection_info();
-    connection_info1.db = 1;
+    connection_info1.redis.db = 1;
     let mut connection_info2 = context.get_client_connection_info();
-    connection_info2.db = 2;
+    connection_info2.redis.db = 2;
 
     // accounts to be created on node a
     let alice_on_a = json!({
@@ -188,9 +188,9 @@ fn multiple_payments_http(c: &mut Criterion) {
     let context = TestContext::new();
 
     let mut connection_info1 = context.get_client_connection_info();
-    connection_info1.db = 1;
+    connection_info1.redis.db = 1;
     let mut connection_info2 = context.get_client_connection_info();
-    connection_info2.db = 2;
+    connection_info2.redis.db = 2;
 
     // accounts to be created on node a
     let alice_on_a = json!({

@@ -11,7 +11,7 @@ async fn payments_incoming() {
     let context = TestContext::new();
 
     let mut connection_info1 = context.get_client_connection_info();
-    connection_info1.db = 1;
+    connection_info1.redis.db = 1;
 
     // test ports
     let node_a_http = get_open_port(None);
