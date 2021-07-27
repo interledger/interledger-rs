@@ -3,11 +3,11 @@ use crate::test_helpers::*;
 use ilp_node::InterledgerNode;
 use serde::Deserialize;
 use serde_json::{self, json};
+use tokio_stream::StreamExt;
 use tungstenite::{client, handshake::client::Request};
 
 #[tokio::test]
 async fn payments_incoming() {
-    use tokio::stream::StreamExt;
     let context = TestContext::new();
 
     let mut connection_info1 = context.get_client_connection_info();
@@ -132,7 +132,8 @@ async fn payments_incoming() {
     }
 
     // create a cross-thread collection of payment notifications
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
     let handle = std::thread::spawn(move || {
         let ws_request = Request::builder()
             .uri(format!("ws://localhost:{}/payments/incoming", node_b_http))
