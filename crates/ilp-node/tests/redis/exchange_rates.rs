@@ -2,7 +2,6 @@ use crate::redis_helpers::*;
 use crate::test_helpers::*;
 use ilp_node::InterledgerNode;
 use reqwest::Client;
-use secrecy::SecretString;
 use serde_json::{self, json, Value};
 use std::env;
 use std::time::Duration;
@@ -64,12 +63,13 @@ async fn coincap() {
 async fn cryptocompare() {
     let context = TestContext::new();
 
-    let api_key = env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY");
-    if api_key.is_err() {
-        error!("Skipping cryptocompare test. Must configure an API key by setting ILP_TEST_CRYPTOCOMPARE_API_KEY to run this test");
-        return;
-    }
-    let api_key = SecretString::new(api_key.unwrap());
+    let api_key = match env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY") {
+        Ok(value) => value,
+        Err(_) => {
+            error!("Skipping cryptocompare test. Must configure an API key by setting ILP_TEST_CRYPTOCOMPARE_API_KEY to run this test");
+            return;
+        }
+    };
 
     let http_port = get_open_port(Some(3011));
 
