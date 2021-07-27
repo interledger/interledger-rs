@@ -6,6 +6,7 @@ use interledger_service::Account as AccountTrait;
 use interledger_store::redis::RedisStoreBuilder;
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use std::str::FromStr;
+use tokio_stream::wrappers::BroadcastStream;
 
 #[tokio::test]
 async fn notifications_on_multitenant_config() {
@@ -61,8 +62,8 @@ async fn notifications_on_multitenant_config() {
     for _ in 0..10 {
         // we recreate these on the start of every attempt in order to get a fresh start; the
         // channel will not forward us messages which have come before.
-        let mut rx1 = first.all_payment_subscription();
-        let mut rx2 = second.all_payment_subscription();
+        let mut rx1 = BroadcastStream::new(first.all_payment_subscription());
+        let mut rx2 = BroadcastStream::new(second.all_payment_subscription());
 
         first.publish_payment_notification(first_pmt.clone());
         second.publish_payment_notification(second_pmt.clone());
@@ -85,7 +86,7 @@ async fn notifications_on_multitenant_config() {
 
         let (msg1, msg2) = match tokio::time::timeout(deadline, read_both).await {
             Ok(messages) => messages,
-            Err(tokio::time::Elapsed { .. }) => {
+            Err(tokio::time::error::Elapsed { .. }) => {
                 // failure is most likely because of redis, or publishing to it
                 // see issue #711.
                 continue;

@@ -19,7 +19,11 @@ pub fn connection_info_to_string(info: ConnectionInfo) -> String {
             format!("redis+unix:{}?db={}", path.to_str().unwrap(), info.redis.db)
         }
         // FIXME: no idea what this should look like..
-        ConnectionAddr::TcpTls { host, port, insecure } => todo!(),
+        ConnectionAddr::TcpTls {
+            host,
+            port,
+            insecure,
+        } => todo!(),
     }
 }
 

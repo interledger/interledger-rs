@@ -329,7 +329,7 @@ fn multiple_payments_http(c: &mut Criterion) {
 /// When runtime (rt) is dropped, error will happen ending the loop and then the websocket
 fn forward_payment_notifications(
     ws_request: tungstenite::http::Request<()>,
-    mut sender: tokio::sync::mpsc::Sender<tungstenite::Message>,
+    sender: tokio::sync::mpsc::Sender<tungstenite::Message>,
 ) -> Result<(), tungstenite::Error> {
     let mut payments_ws = client::connect(ws_request)?.0;
     while let Ok(message) = payments_ws.read_message() {
