@@ -15,7 +15,7 @@ interledger-service = { path = "../interledger-service", version = "1.0.0", defa
 bytes = { version = "1.0.1", default-features = false }
 futures = { version = "0.3.7", default-features = false }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
-reqwest = { version = "0.10.0", default-features = false, features = ["default-tls"] }
+reqwest = { version = "0.11.4", default-features = false, features = ["default-tls"] }
 url = { version = "2.1.1", default-features = false }
 warp = { version = "0.3.1", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
