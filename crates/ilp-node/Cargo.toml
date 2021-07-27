@@ -54,8 +54,7 @@ tokio = { version = "0.2.8", default-features = false, features = ["rt-core", "m
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 url = { version = "2.1.1", default-features = false }
 libc = { version = "0.2.62", default-features = false }
-warp = { version = "0.2", default-features = false, features = ["websocket"] }
-secrecy = { version = "0.6.0", default-features = false, features = ["alloc", "serde"] }
+secrecy = { version = "0.8", default-features = false, features = ["alloc", "serde"] }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
 
 # For google-pubsub

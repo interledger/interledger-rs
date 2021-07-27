@@ -45,7 +45,7 @@ serde_json = { version = "1.0.41", default-features = false }
 tokio = { version = "0.2.6", default-features = false, features = ["macros", "rt-core"] }
 url = { version = "2.1.1", default-features = false, features = ["serde"] }
 http = { version = "0.2", default-features = false }
-secrecy = { version = "0.6", default-features = false, features = ["serde", "bytes"] }
+secrecy = { version = "0.8", default-features = false, features = ["serde", "bytes"] }
 zeroize = { version = "1.0.0", default-features = false }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
 uuid = { version = "0.8.1", default-features = false, features = ["serde"] }

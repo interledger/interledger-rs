@@ -27,8 +27,7 @@ tokio-tungstenite = { version = "0.10.1", default-features = false, features = [
 tungstenite = { version = "0.10.1", default-features = false }
 url = { version = "2.1.1", default-features = false }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"]}
-warp = { version = "0.2", default-features = false, features = ["websocket"] }
-secrecy = { version = "0.6", default-features = false, features = ["alloc"] }
+secrecy = { version = "0.8", default-features = false, features = ["alloc"] }
 async-trait = { version = "0.1.22", default-features = false }
 tokio = { version = "0.2.8", default-features = false, features = ["rt-core", "time", "stream", "macros"] }
 once_cell = { version = "1.3.1", default-features = false }

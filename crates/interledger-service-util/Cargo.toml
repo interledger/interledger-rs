@@ -21,7 +21,7 @@ once_cell = { version = "1.3.1", default-features = false, features = ["std"] }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 reqwest = { version = "0.10.0", default-features = false, features = ["default-tls"] }
 ring = { version = "0.16.9", default-features = false }
-secrecy = { version = "0.6", default-features = false, features = ["alloc", "serde"] }
+secrecy = { version = "0.8", default-features = false, features = ["alloc", "serde"] }
 serde = { version = "1.0.101", default-features = false, features = ["derive"]}
 tokio = { version = "0.2.6", default-features = false, features = ["macros", "time"] }
 async-trait = { version = "0.1.22", default-features = false }
