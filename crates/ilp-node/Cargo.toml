@@ -51,6 +51,7 @@ redis_crate = { package = "redis", version = "0.21.0", optional = true, default-
 ring = { version = "0.16.9", default-features = false }
 serde = { version = "1.0.101", default-features = false }
 tokio = { version = "1.9.0", default-features = false, features = ["rt-multi-thread", "macros", "time", "sync"] }
+tokio-stream = { version = "0.1.7", features = ["sync"] }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 url = { version = "2.1.1", default-features = false }
 libc = { version = "0.2.62", default-features = false }

@@ -494,7 +494,7 @@ fn notify_all_payments(
     ws_tx: futures::stream::SplitSink<warp::ws::WebSocket, warp::ws::Message>,
     store: impl StreamNotificationsStore,
 ) -> impl Future<Output = Result<(), ()>> {
-    let rx = store.all_payment_subscription().into_stream();
+    let rx = tokio_stream::wrappers::BroadcastStream::new(store.all_payment_subscription());
     let rx = rx.map(|notification: _| {
         let msg = serde_json::to_string(&notification.map_err(|e| e.to_string())).unwrap();
         Ok(warp::ws::Message::text(msg))

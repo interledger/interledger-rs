@@ -213,8 +213,10 @@ where
         // Send pings every PING_INTERVAL until the connection closes (when `drop(close_connection)` is called)
         // or the Service is dropped (which will implicitly drop `close_all_connections`, closing the stream_valve)
         let tx_clone = client_tx.clone();
+
         let ping_interval = time::interval(Duration::from_secs(PING_INTERVAL));
-        let repeat_until_service_drops = self.stream_valve.wrap(ping_interval);
+        let ping_stream = tokio_stream::wrappers::IntervalStream::new(ping_interval);
+        let repeat_until_service_drops = self.stream_valve.wrap(ping_stream);
         let send_pings = valve.wrap(repeat_until_service_drops).for_each(move |_| {
             // For each tick send a ping
             if let Err(err) = tx_clone.unbounded_send(PING.clone()) {
