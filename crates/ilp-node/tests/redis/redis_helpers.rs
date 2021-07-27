@@ -29,7 +29,7 @@ pub fn connection_info_to_string(info: ConnectionInfo) -> String {
 
 pub fn get_open_port(try_port: Option<u16>) -> u16 {
     if let Some(port) = try_port {
-        let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
         socket.reuse_address().unwrap();
         if socket
             .bind(
@@ -41,20 +41,20 @@ pub fn get_open_port(try_port: Option<u16>) -> u16 {
             .is_ok()
         {
             socket.listen(1).unwrap();
-            let listener = socket.into_tcp_listener();
+            let listener = std::net::TcpListener::from(socket);
             return listener.local_addr().unwrap().port();
         }
     }
 
     for _i in 0..1000 {
-        let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
         socket.reuse_address().unwrap();
         if socket
             .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
             .is_ok()
         {
             socket.listen(1).unwrap();
-            let listener = socket.into_tcp_listener();
+            let listener = std::net::TcpListener::from(socket);
             return listener.local_addr().unwrap().port();
         }
     }
@@ -102,13 +102,13 @@ impl RedisServer {
             ServerType::Tcp => {
                 // this is technically a race but we can't do better with
                 // the tools that redis gives us :(
-                let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+                let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
                 socket.reuse_address().unwrap();
                 socket
                     .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
                     .unwrap();
                 socket.listen(1).unwrap();
-                let listener = socket.into_tcp_listener();
+                let listener = std::net::TcpListener::from(socket);
                 let server_port = listener.local_addr().unwrap().port();
                 cmd.arg("--port")
                     .arg(server_port.to_string())
