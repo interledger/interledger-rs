@@ -17,8 +17,8 @@ use std::collections::HashMap;
 use std::{convert::TryFrom, iter::IntoIterator, marker::PhantomData, sync::Arc, time::Duration};
 use stream_cancel::{Trigger, Valve};
 use tokio::time;
+use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, trace, warn};
-use tungstenite::Message;
 use uuid::Uuid;
 
 const PING_INTERVAL: u64 = 30; // seconds

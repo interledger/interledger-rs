@@ -218,7 +218,7 @@ mod interface_tests {
                     // Because these are interface tests, not integration tests, network errors are expected
                     Ok(_)
                     | Err(Error::Send(_))
-                    | Err(Error::Websocket(_))
+                    | Err(Error::WebsocketErr(_))
                     | Err(Error::Testnet(_)) => (),
                     Err(e) => panic!("Unexpected interpreter failure: {}", e),
                 },

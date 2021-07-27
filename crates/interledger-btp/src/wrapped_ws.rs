@@ -3,6 +3,7 @@ use futures::Sink;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio_tungstenite::tungstenite;
 use tracing::warn;
 use warp::ws::Message;
 
@@ -20,7 +21,7 @@ impl<W> Stream for WsWrap<W>
 where
     W: Stream<Item = Message>,
 {
-    type Item = tungstenite::Message;
+    type Item = tokio_tungstenite::tungstenite::Message;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let this = self.project();
@@ -37,7 +38,7 @@ where
     }
 }
 
-impl<W> Sink<tungstenite::Message> for WsWrap<W>
+impl<W> Sink<tokio_tungstenite::tungstenite::Message> for WsWrap<W>
 where
     W: Sink<Message>,
 {

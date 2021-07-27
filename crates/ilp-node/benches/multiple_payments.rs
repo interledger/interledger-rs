@@ -10,7 +10,7 @@ use ilp_node::InterledgerNode;
 use serde_json::{self, json};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::channel;
-use tungstenite::{client, handshake::client::Request};
+use tokio_tungstenite::tungstenite::{self, client, handshake::client::Request};
 
 mod redis_helpers;
 mod test_helpers;

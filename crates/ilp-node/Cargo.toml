@@ -81,7 +81,7 @@ socket2 = "0.4.0"
 rand = { version = "0.7.2", default-features = false }
 reqwest = { version = "0.11.4", default-features = false, features = ["default-tls", "json"] }
 serde_json = { version = "1.0.41", default-features = false }
-tungstenite = {version = "0.10", default-features = false }
+tokio-tungstenite = { version = "0.15.0" }
 criterion = { version = "0.3", default-features = false , features = ["cargo_bench_support", 'html_reports']}
 tempfile = "3"
 

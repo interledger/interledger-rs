@@ -4,7 +4,7 @@ use ilp_node::InterledgerNode;
 use serde::Deserialize;
 use serde_json::{self, json};
 use tokio_stream::StreamExt;
-use tungstenite::{client, handshake::client::Request};
+use tokio_tungstenite::tungstenite::{client, handshake::client::Request};
 
 #[tokio::test]
 async fn payments_incoming() {
