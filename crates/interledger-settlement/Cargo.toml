@@ -35,7 +35,7 @@ futures-retry = { version = "0.4.0", default-features = false }
 [dev-dependencies]
 parking_lot = { version = "0.10.0", default-features = false }
 mockito = { version = "0.23.1", default-features = false }
-socket2 = "0.3.15"
+socket2 = "0.4.0"
 rand = { version = "0.7.2", default-features = false }
 
 [features]

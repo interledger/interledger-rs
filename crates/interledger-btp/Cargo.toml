@@ -37,4 +37,4 @@ pin-project = { version = "0.4.6", default-features = false }
 
 [dev-dependencies]
 hex-literal = "0.3"
-socket2 = "0.3.15"
+socket2 = "0.4.0"
