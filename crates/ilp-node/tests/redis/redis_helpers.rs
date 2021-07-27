@@ -63,7 +63,7 @@ pub fn get_open_port(try_port: Option<u16>) -> u16 {
 }
 
 pub async fn delay(ms: u64) {
-    tokio::time::delay_for(Duration::from_millis(ms)).await;
+    tokio::time::sleep(Duration::from_millis(ms)).await;
 }
 
 #[derive(PartialEq)]

@@ -35,7 +35,7 @@ uuid = { version = "0.8.1", default-features = false}
 secrecy = { version = "0.8", default-features = false, features = ["serde"] }
 once_cell = "1.3.1"
 async-trait = "0.1.22"
-tokio = { version = "0.2.9", default-features = false, features = ["rt-core", "macros"] }
+tokio = { version = "1.9.0", default-features = false, features = ["rt", "macros"] }
 
 
 [dev-dependencies]

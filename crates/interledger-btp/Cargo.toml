@@ -29,7 +29,7 @@ url = { version = "2.1.1", default-features = false }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"]}
 secrecy = { version = "0.8", default-features = false, features = ["alloc"] }
 async-trait = { version = "0.1.22", default-features = false }
-tokio = { version = "0.2.8", default-features = false, features = ["rt-core", "time", "stream", "macros"] }
+tokio = { version = "1.9.0", default-features = false, features = ["rt", "time", "macros"] }
 once_cell = { version = "1.3.1", default-features = false }
 pin-project = { version = "0.4.6", default-features = false }
 

@@ -358,7 +358,7 @@ fn wait_for_propagation(
             if i == tries_until_timeout - 1 {
                 panic!("Timeout: Responses keep on failing: {:?}", response);
             }
-            tokio::time::delay_for(std::time::Duration::from_millis(delay_ms)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
         for _ in 0..received_message_count {
             // TODO check if received data is correct

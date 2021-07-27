@@ -18,5 +18,5 @@ tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 async-trait = { version = "0.1.22", default-features = false }
 
 [dev-dependencies]
-tokio = { version = "0.2.6", default-features = false, features = ["macros","rt-core"]}
+tokio = { version = "1.9.0", default-features = false, features = ["macros","rt"]}
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }

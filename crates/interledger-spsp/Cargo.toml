@@ -24,4 +24,4 @@ serde_json = { version = "1.0.41", default-features = false }
 thiserror = { version = "1.0.10", default-features = false }
 
 [dev-dependencies]
-tokio = { version = "0.2.8", default-features = false, features = ["macros"] }
+tokio = { version = "1.9.0", default-features = false, features = ["macros"] }

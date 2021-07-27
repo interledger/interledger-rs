@@ -460,7 +460,7 @@ enum ExitReason {
     InputClosed,
     Shutdown,
     Capacity,
-    Other(tokio::time::Error),
+    Other(tokio::time::error::Error),
 }
 
 impl fmt::Display for ExitReason {
@@ -658,7 +658,7 @@ mod tests {
         let fulfill = service.send_request(TEST_REQUEST.clone()).await.unwrap();
         assert_eq!(fulfill.data(), b"test data");
 
-        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        tokio::time::sleep(Duration::from_millis(100u64)).await;
         mock.assert();
         assert!(!*store.refunded_settlement.read());
         assert!(!*store.rejected_message.read());
@@ -681,7 +681,7 @@ mod tests {
         let fulfill = service.send_request(TEST_REQUEST.clone()).await.unwrap();
         assert_eq!(fulfill.data(), b"test data");
 
-        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        tokio::time::sleep(Duration::from_millis(100u64)).await;
         mock.assert();
         assert!(!*store.refunded_settlement.read());
         assert!(!*store.rejected_message.read());
@@ -704,7 +704,7 @@ mod tests {
         let fulfill = service.send_request(TEST_REQUEST.clone()).await.unwrap();
         assert_eq!(fulfill.data(), b"test data");
 
-        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        tokio::time::sleep(Duration::from_millis(100u64)).await;
         mock.assert();
         assert!(*store.refunded_settlement.read());
         assert!(!*store.rejected_message.read());
@@ -732,7 +732,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
 
-        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        tokio::time::sleep(Duration::from_millis(100u64)).await;
         mock.assert();
         assert!(*store.rejected_message.read());
     }

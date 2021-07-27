@@ -42,7 +42,7 @@ parking_lot = { version = "0.10.0", default-features = false }
 ring = { version = "0.16.9", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.41", default-features = false }
-tokio = { version = "0.2.6", default-features = false, features = ["macros", "rt-core"] }
+tokio = { version = "1.9.0", default-features = false, features = ["macros", "rt"] }
 url = { version = "2.1.1", default-features = false, features = ["serde"] }
 http = { version = "0.2", default-features = false }
 secrecy = { version = "0.8", default-features = false, features = ["serde", "bytes"] }

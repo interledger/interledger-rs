@@ -21,7 +21,7 @@ ring = { version = "0.16.9", default-features = false }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"]}
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
 async-trait = { version = "0.1.22", default-features = false }
-tokio = { version = "0.2.6", default-features = false, features = ["time", "rt-core", "macros"] }
+tokio = { version = "1.9.0", default-features = false, features = ["time", "rt", "macros"] }
 
 [dev-dependencies]
 hex-literal = "0.3"

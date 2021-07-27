@@ -32,7 +32,7 @@ async fn coincap() {
     node.serve(None).await.unwrap();
 
     // Wait a few seconds so our node can poll the API
-    tokio::time::delay_for(Duration::from_millis(1000)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     let ret = Client::new()
         .get(&format!("http://localhost:{}/rates", http_port))
@@ -94,7 +94,7 @@ async fn cryptocompare() {
     node.serve(None).await.unwrap();
 
     // Wait a few seconds so our node can poll the API
-    tokio::time::delay_for(Duration::from_millis(1000)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     let ret = Client::new()
         .get(&format!("http://localhost:{}/rates", http_port))

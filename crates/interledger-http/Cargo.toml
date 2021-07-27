@@ -29,4 +29,4 @@ async-trait = { version = "0.1.22", default-features = false }
 
 [dev-dependencies]
 uuid = { version = "0.8.1", default-features = false, features=["v4"]}
-tokio = { version = "0.2.6", default-features = false, features = ["rt-core", "macros"]}
+tokio = { version = "1.9.0", default-features = false, features = ["rt", "macros"]}
