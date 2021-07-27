@@ -24,7 +24,7 @@ interledger-errors = { path = "../interledger-errors", version = "1.0.0", defaul
 
 bytes = { version = "1.0.1", default-features = false }
 futures = { version = "0.3.7", default-features = false }
-futures-retry = { version = "0.4", default-features = false }
+futures-retry = { version = "0.6.0", default-features = false }
 http = { version = "0.2", default-features = false }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
