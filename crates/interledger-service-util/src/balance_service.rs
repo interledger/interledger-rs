@@ -529,7 +529,7 @@ where
 {
     use futures::stream::StreamExt;
     use std::collections::HashMap;
-    use tokio::time::DelayQueue;
+    use tokio_util::time::DelayQueue;
 
     let mut timeouts = DelayQueue::new();
     let mut in_queue = HashMap::new();
