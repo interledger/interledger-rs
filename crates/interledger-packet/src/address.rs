@@ -55,20 +55,19 @@ impl Address {
             return Err(AddressError::InvalidLength(buf.remaining()));
         }
 
-        // TODO: bytes1 changes bytes() to be chunk()
-        let (bytes, matches) = if buf.bytes().len() == buf.remaining() {
+        let (bytes, matches) = if buf.chunk().len() == buf.remaining() {
             // the underlying buffer is not a chained buf
-            (None, ADDRESS_PATTERN.is_match(buf.bytes()))
+            (None, ADDRESS_PATTERN.is_match(buf.chunk()))
         } else {
             // the underlying buffer is multiple slices, copy it now for simplest possible matching
-            let bytes = buf.to_bytes();
+            let bytes = buf.copy_to_bytes(buf.remaining());
             let matches = ADDRESS_PATTERN.is_match(bytes.as_ref());
             (Some(bytes), matches)
         };
 
         if matches {
             // it's important that we only call copy_to_bytes once as it advances internal state
-            let bytes = bytes.unwrap_or_else(|| buf.to_bytes());
+            let bytes = bytes.unwrap_or_else(|| buf.copy_to_bytes(buf.remaining()));
             Ok(Address(bytes))
         } else {
             Err(AddressError::InvalidFormat)

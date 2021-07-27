@@ -288,7 +288,6 @@ impl fmt::Debug for Prepare {
 
 impl<'a> PrepareBuilder<'a> {
     pub fn build(&self) -> Prepare {
-        use bytes::buf::BufMutExt;
         const STATIC_LEN: usize = AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
         let destination_size = oer::predict_var_octet_string(self.destination.len());
         let data_size = oer::predict_var_octet_string(self.data.len());

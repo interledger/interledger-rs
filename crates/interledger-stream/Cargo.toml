@@ -12,7 +12,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 strict = ["interledger-packet/strict"]
 # Only applicable for roundtripping in fuzzing
 # Deliberate error for valid replacement of data, such as `saturating_read_var_uint`.
-roundtrip-only = ["strict"] 
+roundtrip-only = ["strict"]
 
 [dependencies]
 interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false, features = ["serde"] }
@@ -20,7 +20,7 @@ interledger-rates = { path = "../interledger-rates", version = "1.0.0", default-
 interledger-service = { path = "../interledger-service", version = "1.0.0", default-features = false }
 
 base64 = { version = "0.11.0", default-features = false, features = ["std"] }
-bytes = { version = "0.5" }
+bytes = { version = "1.0.1" }
 chrono = { version = "0.4.9", default-features = false, features = ["clock"] }
 futures = { version = "0.3.7", default-features = false, features = ["std"] }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }

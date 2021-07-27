@@ -286,7 +286,6 @@ pub trait MutBufOerExt: BufMut + Sized {
     /// Encodes the given timestamp per the rules, see
     /// [`BufOerExt::read_variable_length_timestamp`].
     fn put_variable_length_timestamp(&mut self, vts: &VariableLengthTimestamp) {
-        use bytes::buf::BufMutExt;
         use std::io::Write;
 
         self.put_var_octet_string_length(vts.len as usize);

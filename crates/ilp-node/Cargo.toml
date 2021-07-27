@@ -39,7 +39,7 @@ vergen = { version = "4.2" }
 [dependencies]
 interledger = { path = "../interledger", version = "1.0.0", default-features = false, features = ["node"] }
 
-bytes = { package = "bytes", version = "0.5" }
+bytes = { package = "bytes", version = "1.0.1" }
 cfg-if = { version = "0.1.10", default-features = false }
 clap = { version = "2.33.0", default-features = false }
 config = { version = "0.10.1", default-features = false, features = ["json", "yaml"] }
