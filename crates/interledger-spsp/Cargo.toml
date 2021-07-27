@@ -16,7 +16,7 @@ interledger-stream = { path = "../interledger-stream", version = "1.0.0", defaul
 base64 = { version = "0.11.0", default-features = false }
 bytes = { version = "1.0.1", default-features = false }
 futures = { version = "0.3.7", default-features = false }
-hyper = { version = "0.13.1", default-features = false }
+hyper = { version = "0.14.11", default-features = false }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 reqwest = { version = "0.10", default-features = false, features = ["default-tls", "json"] }
 serde = { version = "1.0.101", default-features = false }
