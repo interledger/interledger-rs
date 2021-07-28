@@ -39,6 +39,8 @@ impl SettlementClient {
             RequestErrorHandler::new(self.max_retries),
         )
         .await
+        .map(|(response, _attempts)| response)
+        .map_err(|(err, _attempts)| err)
     }
 
     /// Sends a message to the engine (will retry idempotently if it fails) which will get forwarded to the peer's engine
@@ -50,6 +52,8 @@ impl SettlementClient {
             RequestErrorHandler::new(self.max_retries),
         )
         .await
+        .map(|(response, _attempts)| response)
+        .map_err(|(err, _attempts)| err)
     }
 
     async fn send_message_once(&self, id: Uuid, engine_url: Url, message: Vec<u8>) -> Response {
@@ -89,6 +93,8 @@ impl SettlementClient {
             RequestErrorHandler::new(self.max_retries),
         )
         .await
+        .map(|(response, _attempts)| response)
+        .map_err(|(err, _attempts)| err)
     }
 
     async fn create_engine_account_once(&self, id: Uuid, engine_url: Url) -> Response {
@@ -151,15 +157,11 @@ impl SettlementClient {
 
 struct RequestErrorHandler {
     max_attempts: usize,
-    current_attempt: usize,
 }
 
 impl RequestErrorHandler {
     fn new(max_attempts: usize) -> Self {
-        RequestErrorHandler {
-            max_attempts,
-            current_attempt: 0,
-        }
+        RequestErrorHandler { max_attempts }
     }
 }
 
@@ -167,9 +169,8 @@ impl ErrorHandler<reqwest::Error> for RequestErrorHandler {
     type OutError = reqwest::Error;
 
     /// Handler of errors for the retry logic
-    fn handle(&mut self, e: reqwest::Error) -> RetryPolicy<reqwest::Error> {
-        self.current_attempt += 1;
-        if self.current_attempt > self.max_attempts {
+    fn handle(&mut self, attempt: usize, e: reqwest::Error) -> RetryPolicy<reqwest::Error> {
+        if attempt == self.max_attempts {
             return RetryPolicy::ForwardError(e);
         }
         if e.is_timeout() {
