@@ -156,12 +156,14 @@ impl SettlementClient {
 }
 
 struct RequestErrorHandler {
-    max_attempts: usize,
+    max_retries: usize,
 }
 
 impl RequestErrorHandler {
     fn new(max_attempts: usize) -> Self {
-        RequestErrorHandler { max_attempts }
+        RequestErrorHandler {
+            max_retries: max_attempts,
+        }
     }
 }
 
@@ -170,7 +172,7 @@ impl ErrorHandler<reqwest::Error> for RequestErrorHandler {
 
     /// Handler of errors for the retry logic
     fn handle(&mut self, attempt: usize, e: reqwest::Error) -> RetryPolicy<reqwest::Error> {
-        if attempt == self.max_attempts {
+        if attempt > self.max_retries {
             return RetryPolicy::ForwardError(e);
         }
         if e.is_timeout() {
