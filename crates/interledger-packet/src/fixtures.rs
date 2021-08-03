@@ -15,7 +15,7 @@ pub static PREPARE_BUILDER: Lazy<PrepareBuilder<'static>> = Lazy::new(|| Prepare
     destination: Address::from_str("example.alice").unwrap(),
     expires_at: *EXPIRES_AT,
     execution_condition: &EXECUTION_CONDITION,
-    data: &DATA,
+    data: DATA,
 });
 pub static EXPIRES_AT: Lazy<SystemTime> = Lazy::new(|| {
     DateTime::parse_from_rfc3339("2018-06-07T20:48:42.483Z")
@@ -54,7 +54,7 @@ pub static EXECUTION_CONDITION: [u8; 32] = *b"\
 pub static FULFILL: Lazy<Fulfill> = Lazy::new(|| FULFILL_BUILDER.build());
 pub static FULFILL_BUILDER: Lazy<FulfillBuilder<'static>> = Lazy::new(|| FulfillBuilder {
     fulfillment: &FULFILLMENT,
-    data: &DATA,
+    data: DATA,
 });
 
 pub static FULFILL_BYTES: &[u8] = b"\
@@ -89,7 +89,7 @@ pub static REJECT_BUILDER: Lazy<RejectBuilder<'static>> = Lazy::new(|| RejectBui
     code: ErrorCode::F99_APPLICATION_ERROR,
     message: b"Some error",
     triggered_by: Some(&EXAMPLE_CONNECTOR),
-    data: &DATA,
+    data: DATA,
 });
 
 pub static REJECT_BYTES: &[u8] = b"\

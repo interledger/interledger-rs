@@ -113,7 +113,7 @@ where
     let (auth, mut connection) = get_auth(Box::pin(connection)).await?;
     debug!("Got BTP connection for username: {}", username);
     let account = store
-        .get_account_from_btp_auth(&username, &auth.token.expose_secret())
+        .get_account_from_btp_auth(&username, auth.token.expose_secret())
         .map_err(move |_| warn!("BTP connection does not correspond to an account"))
         .await?;
 

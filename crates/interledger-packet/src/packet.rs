@@ -161,7 +161,7 @@ impl TryFrom<BytesMut> for Prepare {
         let expires_at = str::from_utf8(&read_expires_at[..])
             .expect("read_expires_at matches only ascii, utf8 conversion must succeed");
         let expires_at: DateTime<Utc> =
-            Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
+            Utc.datetime_from_str(expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
         let expires_at = SystemTime::from(expires_at);
 
         #[cfg(feature = "roundtrip-only")]
@@ -279,7 +279,7 @@ impl fmt::Debug for Prepare {
             )
             .field(
                 "execution_condition",
-                &HexString(&self.execution_condition()),
+                &HexString(self.execution_condition()),
             )
             .field("data_length", &self.data().len())
             .finish()

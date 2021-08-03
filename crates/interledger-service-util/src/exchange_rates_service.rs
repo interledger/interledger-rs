@@ -55,7 +55,7 @@ where
                 (1f64, 1f64)
             } else if let Ok(rates) = self
                 .store
-                .get_exchange_rates(&[&request.from.asset_code(), &request.to.asset_code()])
+                .get_exchange_rates(&[request.from.asset_code(), request.to.asset_code()])
             {
                 // Exchange rates are expressed as `base asset / asset`. To calculate the outgoing amount,
                 // we multiply by the incoming asset's rate and divide by the outgoing asset's rate. For example,

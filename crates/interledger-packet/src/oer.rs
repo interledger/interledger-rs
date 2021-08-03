@@ -370,9 +370,9 @@ mod test_buf_oer_ext {
     fn test_peek_var_octet_string() {
         let tests: &[(&[u8], &[u8])] = &[
             (&[0x00], &[]),
-            (&ZERO_LENGTH_VARSTR, &[]),
-            (&ONE_BYTE_VARSTR, &[0x01]),
-            (&TWO_BYTE_VARSTR, &[0x01, 0x02]),
+            (ZERO_LENGTH_VARSTR, &[]),
+            (ONE_BYTE_VARSTR, &[0x01]),
+            (TWO_BYTE_VARSTR, &[0x01, 0x02]),
             (&SIZE_128_VARSTR, &[0; 128][..]),
             (&SIZE_5678_VARSTR, &[0; 5678][..]),
         ];
@@ -672,7 +672,7 @@ mod buf_mut_oer_ext {
         let long_varstr = &[0x00; 256][..];
         let long_buffer = {
             let mut buffer = vec![0x82, 0x01, 0x00];
-            buffer.extend_from_slice(&long_varstr);
+            buffer.extend_from_slice(long_varstr);
             buffer
         };
 

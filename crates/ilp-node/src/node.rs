@@ -375,7 +375,7 @@ impl InterledgerNode {
                 }
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
-                    message: &format!(
+                    message: format!(
                         // TODO we might not want to expose the internal account ID in the error
                         "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
                         request.to.id(),

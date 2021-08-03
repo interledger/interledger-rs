@@ -376,7 +376,7 @@ fn set_app_env(env_config: &Config, app: &mut App<'_, '_>, path: &[String], dept
     if depth == 1 {
         for item in &mut app.p.opts {
             if let Ok(value) = env_config.get_str(&item.b.name.to_lowercase()) {
-                item.v.env = Some((&OsStr::new(item.b.name), Some(OsString::from(value))));
+                item.v.env = Some((OsStr::new(item.b.name), Some(OsString::from(value))));
             }
         }
         return;

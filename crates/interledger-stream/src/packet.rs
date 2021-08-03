@@ -283,51 +283,51 @@ impl<'a> FrameIterator<'a> {
         let contents: &'a [u8] = self.buffer.read_var_octet_string()?;
         let frame: Frame<'a> = match FrameType::from(frame_type) {
             FrameType::ConnectionClose => {
-                Frame::ConnectionClose(ConnectionCloseFrame::read_contents(&contents)?)
+                Frame::ConnectionClose(ConnectionCloseFrame::read_contents(contents)?)
             }
             FrameType::ConnectionNewAddress => {
-                Frame::ConnectionNewAddress(ConnectionNewAddressFrame::read_contents(&contents)?)
+                Frame::ConnectionNewAddress(ConnectionNewAddressFrame::read_contents(contents)?)
             }
             FrameType::ConnectionAssetDetails => Frame::ConnectionAssetDetails(
-                ConnectionAssetDetailsFrame::read_contents(&contents)?,
+                ConnectionAssetDetailsFrame::read_contents(contents)?,
             ),
             FrameType::ConnectionMaxData => {
-                Frame::ConnectionMaxData(ConnectionMaxDataFrame::read_contents(&contents)?)
+                Frame::ConnectionMaxData(ConnectionMaxDataFrame::read_contents(contents)?)
             }
             FrameType::ConnectionDataBlocked => {
-                Frame::ConnectionDataBlocked(ConnectionDataBlockedFrame::read_contents(&contents)?)
+                Frame::ConnectionDataBlocked(ConnectionDataBlockedFrame::read_contents(contents)?)
             }
             FrameType::ConnectionMaxStreamId => {
-                Frame::ConnectionMaxStreamId(ConnectionMaxStreamIdFrame::read_contents(&contents)?)
+                Frame::ConnectionMaxStreamId(ConnectionMaxStreamIdFrame::read_contents(contents)?)
             }
             FrameType::ConnectionStreamIdBlocked => Frame::ConnectionStreamIdBlocked(
-                ConnectionStreamIdBlockedFrame::read_contents(&contents)?,
+                ConnectionStreamIdBlockedFrame::read_contents(contents)?,
             ),
             FrameType::StreamClose => {
-                Frame::StreamClose(StreamCloseFrame::read_contents(&contents)?)
+                Frame::StreamClose(StreamCloseFrame::read_contents(contents)?)
             }
             FrameType::StreamMoney => {
-                Frame::StreamMoney(StreamMoneyFrame::read_contents(&contents)?)
+                Frame::StreamMoney(StreamMoneyFrame::read_contents(contents)?)
             }
             FrameType::StreamMaxMoney => {
-                Frame::StreamMaxMoney(StreamMaxMoneyFrame::read_contents(&contents)?)
+                Frame::StreamMaxMoney(StreamMaxMoneyFrame::read_contents(contents)?)
             }
             FrameType::StreamMoneyBlocked => {
-                Frame::StreamMoneyBlocked(StreamMoneyBlockedFrame::read_contents(&contents)?)
+                Frame::StreamMoneyBlocked(StreamMoneyBlockedFrame::read_contents(contents)?)
             }
-            FrameType::StreamData => Frame::StreamData(StreamDataFrame::read_contents(&contents)?),
+            FrameType::StreamData => Frame::StreamData(StreamDataFrame::read_contents(contents)?),
             FrameType::StreamMaxData => {
-                Frame::StreamMaxData(StreamMaxDataFrame::read_contents(&contents)?)
+                Frame::StreamMaxData(StreamMaxDataFrame::read_contents(contents)?)
             }
             FrameType::StreamDataBlocked => {
-                Frame::StreamDataBlocked(StreamDataBlockedFrame::read_contents(&contents)?)
+                Frame::StreamDataBlocked(StreamDataBlockedFrame::read_contents(contents)?)
             }
             FrameType::Unknown => {
                 warn!(
                     "Ignoring unknown frame of type {}: {:x?}",
                     frame_type, contents,
                 );
-                Frame::Unknown(UnknownFrameData::store_raw_contents(frame_type, &contents))
+                Frame::Unknown(UnknownFrameData::store_raw_contents(frame_type, contents))
             }
         };
 

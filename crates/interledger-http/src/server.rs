@@ -43,7 +43,7 @@ where
     }
     Ok(store
         .get_account_from_http_auth(
-            &path_username,
+            path_username,
             &password.expose_secret()[BEARER_TOKEN_START..],
         )
         .await?)

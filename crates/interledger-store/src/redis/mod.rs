@@ -304,7 +304,7 @@ impl RedisStoreBuilder {
                 sub_connection.psubscribe::<_, _, Vec<String>>(&[prefix], move |msg| {
                     let channel_name = msg.get_channel_name();
                     if let Some(suffix) = channel_name.strip_prefix(&db_prefix) {
-                        if let Ok(account_id) = Uuid::from_str(&suffix) {
+                        if let Ok(account_id) = Uuid::from_str(suffix) {
                             let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
                                 Ok(s) => s,
                                 Err(e) => {
@@ -1461,7 +1461,7 @@ impl CcpRoutingStore for RedisStore {
         let account_ids: Vec<Uuid> = account_ids
             .into_iter()
             .map(|id| id.0)
-            .filter(|id| !ignore_accounts.contains(&id))
+            .filter(|id| !ignore_accounts.contains(id))
             .collect();
         if account_ids.is_empty() {
             return Ok(Vec::new());
@@ -2010,7 +2010,7 @@ impl FromStr for RedisAccountId {
     type Err = uuid::Error;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        let id = Uuid::from_str(&src)?;
+        let id = Uuid::from_str(src)?;
         Ok(RedisAccountId(id))
     }
 }
@@ -2206,7 +2206,7 @@ fn get_value<V>(key: &str, map: &HashMap<String, Value>) -> Result<V, RedisError
 where
     V: FromRedisValue,
 {
-    if let Some(ref value) = map.get(key) {
+    if let Some(value) = map.get(key) {
         from_redis_value(value)
     } else {
         Err(RedisError::from((
@@ -2221,7 +2221,7 @@ fn get_value_option<V>(key: &str, map: &HashMap<String, Value>) -> Result<Option
 where
     V: FromRedisValue,
 {
-    if let Some(ref value) = map.get(key) {
+    if let Some(value) = map.get(key) {
         from_redis_value(value).map(Some)
     } else {
         Ok(None)
@@ -2232,7 +2232,7 @@ fn get_bytes_option(
     key: &str,
     map: &HashMap<String, Value>,
 ) -> Result<Option<BytesMut>, RedisError> {
-    if let Some(ref value) = map.get(key) {
+    if let Some(value) = map.get(key) {
         let vec: Vec<u8> = from_redis_value(value)?;
         Ok(Some(BytesMut::from(vec.as_slice())))
     } else {
@@ -2241,7 +2241,7 @@ fn get_bytes_option(
 }
 
 fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>, RedisError> {
-    if let Some(ref value) = map.get(key) {
+    if let Some(value) = map.get(key) {
         let value: String = from_redis_value(value)?;
         if let Ok(url) = Url::parse(&value) {
             Ok(Some(url))

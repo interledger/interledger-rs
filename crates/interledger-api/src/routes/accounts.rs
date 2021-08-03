@@ -415,7 +415,7 @@ where
             let server_secret_clone = server_secret.clone();
             async move {
                 if let Some(ref username) = default_spsp_account {
-                    let id = store.get_account_id_from_username(&username).await?;
+                    let id = store.get_account_id_from_username(username).await?;
 
                     // TODO this shouldn't take multiple store calls
                     let mut accounts = store.get_accounts(vec![id]).await?;

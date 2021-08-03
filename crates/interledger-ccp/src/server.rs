@@ -439,7 +439,7 @@ where
                 warn!("Error handling incoming Route Update request, sending a Route Control request to get updated routing table info from peer. Error was: {}", &message);
                 let reject = RejectBuilder {
                     code: ErrorCode::F00_BAD_REQUEST,
-                    message: &message.as_bytes(),
+                    message: message.as_bytes(),
                     data: &[],
                     triggered_by: Some(&self.ilp_address.read()),
                 }
