@@ -21,7 +21,7 @@ pub enum Error {
     #[error("Error receving HTTP response from testnet: {0}")]
     Testnet(reqwest::Error),
     #[error("Error altering URL scheme")]
-    Scheme(()), // TODO: should be part of Urlor, see https://github.com/servo/rust-url/issues/299
+    Scheme(()), // TODO: should be part of UrlError, see https://github.com/servo/rust-url/issues/299
     #[error("Error parsing URL: {0}")]
     Url(#[from] url::ParseError),
     #[error("WebSocket error: {0}")]
