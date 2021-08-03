@@ -568,7 +568,7 @@ mod tests {
         #[test]
         fn from_bytes() {
             assert_eq!(
-                BtpMessage::from_bytes(&MESSAGE_1_SERIALIZED).unwrap(),
+                BtpMessage::from_bytes(MESSAGE_1_SERIALIZED).unwrap(),
                 *MESSAGE_1
             );
         }
@@ -597,7 +597,7 @@ mod tests {
         #[test]
         fn from_bytes() {
             assert_eq!(
-                BtpResponse::from_bytes(&RESPONSE_1_SERIALIZED).unwrap(),
+                BtpResponse::from_bytes(RESPONSE_1_SERIALIZED).unwrap(),
                 *RESPONSE_1
             );
         }
@@ -625,7 +625,7 @@ mod tests {
 
         #[test]
         fn from_bytes() {
-            assert_eq!(BtpError::from_bytes(&ERROR_1_SERIALIZED).unwrap(), *ERROR_1);
+            assert_eq!(BtpError::from_bytes(ERROR_1_SERIALIZED).unwrap(), *ERROR_1);
         }
 
         #[test]

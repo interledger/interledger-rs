@@ -57,7 +57,7 @@ impl ConnectionGenerator {
         let shared_secret = hmac_sha256(&self.secret_generator[..], token.as_bytes());
         // Note that the unwrap here is safe because we know the base_address
         // is valid and adding base64-url characters will always be valid
-        let destination_account = base_address.with_suffix(&token.as_ref()).unwrap();
+        let destination_account = base_address.with_suffix(token.as_ref()).unwrap();
 
         debug!("Generated address: {}", destination_account);
         (destination_account, shared_secret)
@@ -202,7 +202,7 @@ where
             let shared_secret = self.connection_generator.rederive_secret(&destination);
             let response = receive_money(
                 &shared_secret,
-                &to_address,
+                to_address,
                 request.to.asset_code(),
                 request.to.asset_scale(),
                 &request.prepare,
@@ -370,7 +370,7 @@ fn receive_money(
         let reject = RejectBuilder {
             code: ErrorCode::F99_APPLICATION_ERROR,
             message: &[],
-            triggered_by: Some(&ilp_address),
+            triggered_by: Some(ilp_address),
             data: &encrypted_response[..],
         }
         .build();

@@ -288,11 +288,7 @@ mod echo_tests {
             assert_eq!(request.prepare.execution_condition(), execution_condition);
             assert_eq!(request.prepare.destination(), destination);
             assert_eq!(request.prepare.data(), &data[..]);
-            Ok(FulfillBuilder {
-                fulfillment: &fulfillment,
-                data,
-            }
-            .build())
+            Ok(FulfillBuilder { fulfillment, data }.build())
         });
         let mut echo_service = EchoService::new(TestStore(node_address), handler);
 
@@ -335,7 +331,7 @@ mod echo_tests {
             assert_eq!(request.prepare.destination(), dest);
             assert_eq!(request.prepare.data(), &data[..]);
             Ok(FulfillBuilder {
-                fulfillment: &fulfillment,
+                fulfillment,
                 data: &[],
             }
             .build())
@@ -380,11 +376,7 @@ mod echo_tests {
             assert_eq!(request.prepare.execution_condition(), execution_condition);
             assert_eq!(request.prepare.destination(), source_address);
             assert_eq!(request.prepare.data(), &data[..]);
-            Ok(FulfillBuilder {
-                fulfillment: &fulfillment,
-                data,
-            }
-            .build())
+            Ok(FulfillBuilder { fulfillment, data }.build())
         });
         let mut echo_service = EchoService::new(TestStore(node_address), handler);
 

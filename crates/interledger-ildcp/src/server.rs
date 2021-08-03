@@ -37,7 +37,7 @@ where
         if is_ildcp_request(&request.prepare) {
             let from = request.from.ilp_address();
             let builder = IldcpResponseBuilder {
-                ilp_address: &from,
+                ilp_address: from,
                 asset_code: request.from.asset_code(),
                 asset_scale: request.from.asset_scale(),
             };

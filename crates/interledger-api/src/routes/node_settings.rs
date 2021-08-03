@@ -133,7 +133,7 @@ where
                 // Convert the usernames to account IDs to set the routes in the store
                 let mut usernames: Vec<Username> = Vec::new();
                 for username in routes.values() {
-                    let user = match Username::from_str(&username) {
+                    let user = match Username::from_str(username) {
                         Ok(u) => u,
                         Err(_) => return Err(Rejection::from(ApiError::bad_request())),
                     };

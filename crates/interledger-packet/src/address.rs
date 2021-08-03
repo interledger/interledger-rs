@@ -161,7 +161,7 @@ impl Address {
         unsafe {
             self.0
                 .split(|&b| b == b'.')
-                .map(|s| str::from_utf8_unchecked(&s))
+                .map(|s| str::from_utf8_unchecked(s))
         }
     }
 

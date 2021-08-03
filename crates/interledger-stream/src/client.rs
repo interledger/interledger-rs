@@ -684,7 +684,7 @@ fn get_rate<S: ExchangeRateStore>(
     // Fetch the exchange rate
     let rate: BigRational = if source_code == dest_code {
         BigRational::one()
-    } else if let Ok(prices) = store.get_exchange_rates(&[&source_code, &dest_code]) {
+    } else if let Ok(prices) = store.get_exchange_rates(&[source_code, dest_code]) {
         BigRational::from_f64(prices[0])? / BigRational::from_f64(prices[1])?
     } else {
         return None;

@@ -68,7 +68,7 @@ where
         } else if !routing_table.is_empty() {
             let mut matching_prefix = "";
             let routing_table = self.store.routing_table();
-            for (ref prefix, account) in (*routing_table).iter() {
+            for (prefix, account) in (*routing_table).iter() {
                 // Check if the route prefix matches or is empty (meaning it's a catch-all address)
                 if (prefix.is_empty() || dest.starts_with(prefix.as_str()))
                     && prefix.len() >= matching_prefix.len()
