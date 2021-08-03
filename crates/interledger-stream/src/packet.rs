@@ -288,9 +288,9 @@ impl<'a> FrameIterator<'a> {
             FrameType::ConnectionNewAddress => {
                 Frame::ConnectionNewAddress(ConnectionNewAddressFrame::read_contents(contents)?)
             }
-            FrameType::ConnectionAssetDetails => Frame::ConnectionAssetDetails(
-                ConnectionAssetDetailsFrame::read_contents(contents)?,
-            ),
+            FrameType::ConnectionAssetDetails => {
+                Frame::ConnectionAssetDetails(ConnectionAssetDetailsFrame::read_contents(contents)?)
+            }
             FrameType::ConnectionMaxData => {
                 Frame::ConnectionMaxData(ConnectionMaxDataFrame::read_contents(contents)?)
             }

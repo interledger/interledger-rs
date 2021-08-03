@@ -14,7 +14,7 @@ pub fn main() {
 
     // 4. Handle interpreter output
     match result {
-        Err(interpreter::Error::UsageErr(s)) => {
+        Err(interpreter::Error::Usage(s)) => {
             // Clap doesn't seem to have a built-in way of manually printing the
             // help text for an arbitrary subcommand, but this works just the same.
             app.get_matches_from(s.split(' '));
@@ -217,9 +217,9 @@ mod interface_tests {
                 Ok(matches) => match run(&matches) {
                     // Because these are interface tests, not integration tests, network errors are expected
                     Ok(_)
-                    | Err(Error::SendErr(_))
-                    | Err(Error::WebsocketErr(_))
-                    | Err(Error::TestnetErr(_)) => (),
+                    | Err(Error::Send(_))
+                    | Err(Error::Websocket(_))
+                    | Err(Error::Testnet(_)) => (),
                     Err(e) => panic!("Unexpected interpreter failure: {}", e),
                 },
             }
