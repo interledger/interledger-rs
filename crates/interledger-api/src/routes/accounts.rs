@@ -26,6 +26,46 @@ use tracing::{debug, error, trace};
 use uuid::Uuid;
 use warp::{self, reply::Json, Filter, Rejection};
 
+/// Helper to combine multiple filters together with Filter::or, possibly boxing the types in
+/// the process. This prevents a stack-overflow issue with long combinations of filters in debug
+/// mode. Additionally improves compile times.
+///
+/// Warp issue: https://github.com/seanmonstar/warp/issues/811
+///
+/// Macro source: https://github.com/seanmonstar/warp/issues/619#issuecomment-662716377
+///
+/// Additional context from usage in rs-ipfs:
+///     https://github.com/rs-ipfs/rust-ipfs/commit/a3f27e5b4688dfe30e3a35db94671f3ff71ebe95
+///     https://github.com/rs-ipfs/rust-ipfs/commit/b2365db44e550c2731079be563880ad5a4d8783a
+macro_rules! combine {
+    ($x:expr $(,)?) => { boxed_on_debug!($x) };
+    ($($x:expr),+ $(,)?) => {
+        combine!(@internal ; $($x),+; $($x),+)
+    };
+    (@internal $($left:expr),*; $head:expr, $($tail:expr),+; $a:expr $(,$b:expr)?) => {
+        (combine!($($left,)* $head)).or(combine!($($tail),+))
+    };
+    (@internal $($left:expr),*; $head:expr, $($tail:expr),+; $a:expr, $b:expr, $($more:expr),+) => {
+        combine!(@internal $($left,)* $head; $($tail),+; $($more),+)
+    };
+}
+
+/// Macro will cause boxing on debug builds. Might be a good idea to explore how much boxing always
+/// would speed up builds.
+#[cfg(not(debug_assertions))]
+macro_rules! boxed_on_debug {
+    ($x:expr) => {
+        $x
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! boxed_on_debug {
+    ($x:expr) => {
+        $x.boxed()
+    };
+}
+
 pub const BEARER_TOKEN_START: usize = 7;
 
 const fn get_default_max_slippage() -> f64 {
@@ -437,18 +477,24 @@ where
             }
         });
 
-    get_spsp
-        .or(get_spsp_well_known)
-        .or(post_accounts)
-        .or(get_accounts)
-        .or(put_account)
-        .or(delete_account)
-        .or(get_account)
-        .or(get_account_balance)
-        .or(put_account_settings)
-        .or(incoming_payment_notifications)
-        .or(all_payment_notifications)
-        .or(post_payments)
+    // Using `combine!` to prevent a stack-overflow (in debug mode only)
+    // caused by this filter chain.
+    //
+    // See `combine!` docs for more details.
+    combine!(
+        get_spsp,
+        get_spsp_well_known,
+        post_accounts,
+        get_accounts,
+        put_account,
+        delete_account,
+        get_account,
+        get_account_balance,
+        put_account_settings,
+        incoming_payment_notifications,
+        all_payment_notifications,
+        post_payments,
+    )
 }
 
 async fn consume_msg_drain(mut ws_rx: futures::stream::SplitStream<warp::ws::WebSocket>) {
