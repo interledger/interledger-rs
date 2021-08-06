@@ -2,11 +2,8 @@ name: CI
 
 # limit ci building to pushes to master not to get twice the notification email
 # from github.
-#
-# if you want to test your branch on your fork, just replace the 'branches'
-# filter below for 'push' with the one for 'pull_request' temporarily and drop
-# the commit when creating the PR.
 on:
+  workflow_dispatch:
   push:
     branches:
       - 'master'
@@ -14,7 +11,7 @@ on:
     branches: '*'
 
 jobs:
-  build:
+  interledger:
     env:
       RUST_LOG: "interledger=trace"
       RUST_BACKTRACE: "full"
@@ -35,6 +32,9 @@ jobs:
           rust-version: stable
           components: clippy, rustfmt
 
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
       - name: Build
         run: cargo build --all-features --all-targets
 
@@ -54,45 +54,164 @@ jobs:
       - name: Test
         run: timeout 15m cargo test --all --all-features
 
-      - name: Test with subset of features (interledger-packet)
-        run: |
-          timeout 15m cargo test -p interledger-packet
-          timeout 15m cargo test -p interledger-packet --features strict
-          timeout 15m cargo test -p interledger-packet --features roundtrip-only
+  interledger-packet:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
 
-      - name: Test with subset of features (interledger-btp)
-        run: |
-          timeout 15m cargo test -p interledger-btp
-          timeout 15m cargo test -p interledger-btp --features strict
-
-      - name: Test with subset of features (interledger-stream)
-        run: |
-          timeout 15m cargo test -p interledger-stream
-          timeout 15m cargo test -p interledger-stream --features strict
-          timeout 15m cargo test -p interledger-stream --features roundtrip-only
-
-  test-md:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Install node
-        uses: actions/setup-node@v2
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
         with:
-          node-version: 'v12.18.4'
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Test
+        run: timeout 15m cargo test -p interledger-packet
+      - name: Test --features strict
+        run: timeout 15m cargo test -p interledger-packet --features strict
+      - name: Test --features roundtrip-only
+        run: timeout 15m cargo test -p interledger-packet --features roundtrip-only
+
+  interledger-stream:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Test
+        run: timeout 15m cargo test -p interledger-stream
+      - name: Test --features strict
+        run: timeout 15m cargo test -p interledger-stream --features strict
+      - name: Test --features roundtrip-only
+        run: timeout 15m cargo test -p interledger-stream --features roundtrip-only
+
+  interledger-btp:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Test
+        run: timeout 15m cargo test -p interledger-btp
+      - name: Test --features strict
+        run: timeout 15m cargo test -p interledger-btp --features strict
+
+  build:
+    # Repo requires a `build` job to succeed in order to merge into master.
+    # A step and runs-on is required for a job to be valid.
+    needs: [interledger, interledger-packet, interledger-stream, interledger-btp]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Success
+        run: echo "Success"
+
+  settlement-engines:
+    # This job builds the ethereum-settlement-engine required by `test-md`.
+    # A separate job to enable dependency caching.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          repository: interledger-rs/settlement-engines
+          ref: master
+
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Build
+        run: cargo build --bin ilp-settlement-ethereum
+
+      - name: Upload settlement-engine artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: settlement-engine
+          path: target/debug/ilp-settlement-ethereum
+
+  test-md:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
+
+    needs: settlement-engines
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Build binaries
+        run: |
+          mkdir -p ~/.interledger/bin
+          cargo build --bin ilp-node --bin ilp-cli
+          mv target/debug/ilp-node ~/.interledger/bin
+          mv target/debug/ilp-cli ~/.interledger/bin
+
+      - name: Download settlement engine artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: settlement-engine
+          path: ~/.interledger/bin
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y redis-server redis-tools libssl-dev
 
-          # install components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
-          npm install -g ganache-cli ilp-settlement-xrp conventional-changelog-cli
+          # install components (ganache-cli ilp-settlement-xrp)
+          npm install -g ganache-cli ilp-settlement-xrp
 
       - name: Test
-        run: |
-          scripts/run-md-test.sh '^.*$' 1
+        run: scripts/run-md-test.sh '^.*$' 2
 
       - name: 'Store artifacts'
         if: ${{ failure() }}
