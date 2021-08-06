@@ -2,11 +2,8 @@ name: CI
 
 # limit ci building to pushes to master not to get twice the notification email
 # from github.
-#
-# if you want to test your branch on your fork, just replace the 'branches'
-# filter below for 'push' with the one for 'pull_request' temporarily and drop
-# the commit when creating the PR.
 on:
+  workflow_dispatch:
   push:
     branches:
       - 'master'
