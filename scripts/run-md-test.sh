@@ -1,4 +1,27 @@
 #!/bin/bash
+#
+# Runs the examples listed in the READMEs from `examples/*/README.md`.
+#
+# Requires additional runtime dependencies as listed in those READMEs.
+#
+# The code snippets and comments are parsed by `parse-md.sh` and can
+# essentially be split into two sections:
+#   1: binary aquisition
+#   2: test execution
+#
+# (1) is controlled by the `SOURCE_MODE` parameter in the READMEs and
+# is set by the second flag passed to this script ($2).
+#
+# Note: although the README scripts check for the binaries existance
+#       before re-downloading (SOURCE_MODE != 1), this script deletes
+#       the binaries before each run.
+#
+# Has two parameters:
+#   $1 = test name filter
+#   $2 = source mode flag
+#      1: build binaries from source
+#      *: download binaries as releases
+
 
 function clear_environment() {
     clear_logs
