@@ -12,22 +12,25 @@
 # (1) is controlled by the `SOURCE_MODE` parameter in the READMEs and
 # is set by the second flag passed to this script ($2).
 #
-# Note: although the README scripts check for the binaries existance
-#       before re-downloading (SOURCE_MODE != 1), this script deletes
-#       the binaries before each run.
-#
 # Has two parameters:
 #   $1 = test name filter
 #   $2 = source mode flag
 #      1: build binaries from source
-#      *: download binaries as releases
+#      2: use existing binaries (or download binaries if they don't exist)
+#      *: download binaries (replaces existing binaries)
 
 
+# $1: source mode flag
+#    2: don't clear binaries
+#    *: clear binaries
 function clear_environment() {
     clear_logs
     free_ports
     clear_redis_file
-    clear_binaries
+
+    if [ ! $1 -eq 2 ]; then
+        clear_binaries
+    fi
 }
 
 function clear_logs() {
@@ -62,7 +65,7 @@ function clear_binaries() {
 }
 
 # $1 = target directory
-# $2 = source mode in [01]
+# $2 = source mode
 # $3 = test name filter
 #
 # test_example examples/eth-settlement 0
@@ -75,11 +78,13 @@ function test_example() {
     pushd $target_directory > /dev/null
     if [ $source_mode -eq 1 ]; then
         printf "\e[33;1mTesting \"${target_name}\" on source mode. [%d/%d]\e[m\n" "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
-        clear_environment; TEST_MODE=1 SOURCE_MODE=1 $RUN_MD .
+        clear_environment $2;
+        TEST_MODE=1 SOURCE_MODE=1 $RUN_MD .
         result=$?
     else
         printf "\e[33;1mTesting \"${target_name}\" on binary mode. [%d/%d]\e[m\n" "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
-        clear_environment; TEST_MODE=1 $RUN_MD .
+        clear_environment $2;
+        TEST_MODE=1 $RUN_MD .
         result=$?
     fi
     mkdir -p ${LOG_DIR}/${target_name}
@@ -111,7 +116,7 @@ function add_example_tests() {
 }
 
 # $1 = test name filter
-# $2 = source mode filter
+# $2 = source mode flag
 
 BASE_DIR=$(cd $(dirname $0); pwd)
 RUN_MD=$BASE_DIR/run-md.sh
