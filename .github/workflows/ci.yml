@@ -11,7 +11,7 @@ on:
     branches: '*'
 
 jobs:
-  build:
+  interledger:
     env:
       RUST_LOG: "interledger=trace"
       RUST_BACKTRACE: "full"
@@ -54,22 +54,81 @@ jobs:
       - name: Test
         run: timeout 15m cargo test --all --all-features
 
-      - name: Test with subset of features (interledger-packet)
-        run: |
-          timeout 15m cargo test -p interledger-packet
-          timeout 15m cargo test -p interledger-packet --features strict
-          timeout 15m cargo test -p interledger-packet --features roundtrip-only
+  interledger-packet:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
 
-      - name: Test with subset of features (interledger-btp)
-        run: |
-          timeout 15m cargo test -p interledger-btp
-          timeout 15m cargo test -p interledger-btp --features strict
+    runs-on: ubuntu-latest
 
-      - name: Test with subset of features (interledger-stream)
-        run: |
-          timeout 15m cargo test -p interledger-stream
-          timeout 15m cargo test -p interledger-stream --features strict
-          timeout 15m cargo test -p interledger-stream --features roundtrip-only
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Test
+        run: timeout 15m cargo test -p interledger-packet
+      - name: Test --features strict
+        run: timeout 15m cargo test -p interledger-packet --features strict
+      - name: Test --features roundtrip-only
+        run: timeout 15m cargo test -p interledger-packet --features roundtrip-only
+
+  interledger-stream:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Test
+        run: timeout 15m cargo test -p interledger-stream
+      - name: Test --features strict
+        run: timeout 15m cargo test -p interledger-stream --features strict
+      - name: Test --features roundtrip-only
+        run: timeout 15m cargo test -p interledger-stream --features roundtrip-only
+
+  interledger-btp:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Test
+        run: timeout 15m cargo test -p interledger-btp
+      - name: Test --features strict
+        run: timeout 15m cargo test -p interledger-btp --features strict
 
   test-md:
     runs-on: ubuntu-latest
