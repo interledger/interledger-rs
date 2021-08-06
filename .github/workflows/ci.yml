@@ -207,8 +207,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y redis-server redis-tools libssl-dev
 
-          # install components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
-          npm install -g ganache-cli ilp-settlement-xrp conventional-changelog-cli
+          # install components (ganache-cli ilp-settlement-xrp)
+          npm install -g ganache-cli ilp-settlement-xrp
 
       - name: Test
         run: scripts/run-md-test.sh '^.*$' 2
