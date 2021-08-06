@@ -130,6 +130,14 @@ jobs:
       - name: Test --features strict
         run: timeout 15m cargo test -p interledger-btp --features strict
 
+  build:
+    # Repo requires a `build` job to succeed in order to merge into master.
+    # A step and runs-on is required for a job to be valid.
+    needs: [interledger, interledger-packet, interledger-stream, interledger-btp]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Success
+        run: echo "Success"
 
   settlement-engines:
     # This job builds the ethereum-settlement-engine required by `test-md`.
