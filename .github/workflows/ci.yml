@@ -32,6 +32,9 @@ jobs:
           rust-version: stable
           components: clippy, rustfmt
 
+      - name: Cache
+        uses: Swatinem/rust-cache@v1
+
       - name: Build
         run: cargo build --all-features --all-targets
 
