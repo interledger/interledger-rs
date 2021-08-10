@@ -1,0 +1,69 @@
+# Checks all commits in a PR follow the repo rules:
+#
+#   1. conventional commit messages
+#   2. used `git commit --signoff`
+#   3. no extra merge commits
+name: Commits
+
+on:
+  workflow_dispatch:
+  # Perform these checks on PRs into *any* branch.
+  #
+  # Motivation:
+  #   Commits which are not --signoff but merged into other branches
+  #   will likely make their way into PRs for master. At which
+  #   point it will be difficult to get the original author to --signoff.
+  pull_request:
+
+jobs:
+  commit-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set commit range variables
+        # Finding the commit range is not as trivial as it may seem.
+        #
+        # At this stage git's HEAD does not refer to the latest commit in the PR,
+        # but rather to the merge commit inserted by the PR. So instead we have
+        # to get 'HEAD' from the PR event.
+        #
+        # One cannot use the number of commits (github.event.pull_request.commits)
+        # to find the start commit i.e. HEAD~N does not work, this breaks if there
+        # are merge commits.
+        run: |
+          echo "PR_HEAD=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "PR_BASE=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
+
+      - name: Install conventional-commit linter
+        run: |
+          # Intall the linter and the conventional commits config
+          npm install @commitlint/config-conventional @commitlint/cli
+
+          # Extend the conventional commits config with the `--signoff`
+          # requirement.
+          echo "module.exports = {
+            extends: ['@commitlint/config-conventional'],
+            rules: {
+              'signed-off-by': [2, 'always', 'Signed-off-by:'],
+            }
+          }" > commitlint.config.js
+
+      - name: Conventional commit check
+        run: |
+          npx commitlint --from $PR_BASE --to $PR_HEAD
+
+      - name: No merge commits
+        run: |
+          # This will list any merge commits in the PR commit path
+          MERGE=$(git log --merges --ancestry-path $PR_BASE..$PR_HEAD)
+
+          # The merge list should be empty
+          [[ ! -z "$MERGE" ]] && {
+            echo "PR contains merge commits:";
+            echo $MERGE;
+            exit 1;
+          }
+          exit 0;
