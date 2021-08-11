@@ -5,7 +5,6 @@ use reqwest::Client;
 use serde_json::{self, json, Value};
 use std::env;
 use std::time::Duration;
-use tracing::error;
 
 #[tokio::test]
 async fn coincap() {
@@ -66,7 +65,7 @@ async fn cryptocompare() {
     let api_key = match env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY") {
         Ok(value) => value,
         Err(_) => {
-            error!("Skipping cryptocompare test. Must configure an API key by setting ILP_TEST_CRYPTOCOMPARE_API_KEY to run this test");
+            eprintln!("Skipping cryptocompare test. Must configure an API key by setting ILP_TEST_CRYPTOCOMPARE_API_KEY to run this test");
             return;
         }
     };
