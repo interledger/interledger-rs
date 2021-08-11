@@ -35,7 +35,7 @@ Before diving in to Interledger.rs, you may find it helpful to familiarize yours
 ## Pull Requests
 We welcome pull requests (PRs) that address reported issues. You can find appropriate issues by `bug` or `help-wanted` labels. To avoid multiple PRs for a single issue, please let us know that you are working on it by a comment for the issue. Also we recommend to make discussions on the issue of how to address the issue, methodology towards the resolution or the architecture of your code, in order to avoid writing inefficient or inappropriate code.
 
-Please follow the instruction below when making pull requests.
+Please follow the instruction below when making pull requests. These will be checked by our PR CI process where applicable, so don't worry about getting it wrong.
 
 - Make sure that your branch is forked from the latest `master` branch.
 - Make sure that you wrote tests, ran it and the results were all green (required to pass CI).
@@ -47,10 +47,10 @@ Please follow the instruction below when making pull requests.
     - To install clippy, run `rustup component add clippy`.
     - To run clippy, use `cargo clippy --all-targets --all-features -- -D warnings`.
     - If you would like to make your local setup reject unformatted commits, you can add the command as a pre-commit hook in the file `interledger-rs/.git/hooks/pre-commit`.
-- Make sure to commit using `-s` or `--signoff` option like `git cz -s`.
+- Make sure to commit using `-s` or `--signoff` option like `git cz -s` (required to pass CI).
     - `cz` means using the [commitizen](https://github.com/commitizen/cz-cli) explained below.
     - Why we use the option is explained later in the [Signing-off](#Signing-off) section.
-- Make sure that you committed using the [commitizen](https://github.com/commitizen/cz-cli) format (commit messages should start with `feat:`, `docs:`, `refactor:`, `chore:`, etc). PRs may contain multiple commits but they should generally be squashed into one or a small number of complete change sets (for example, a feature followed by multiple refactors and another commit to add tests and docs should be combined into a single commit for that feature).
+- Make sure that you committed using the [commitizen](https://github.com/commitizen/cz-cli) format (commit messages should start with `feat:`, `docs:`, `refactor:`, `chore:`, etc) (required to pass CI). PRs may contain multiple commits but they should generally be squashed into one or a small number of complete change sets (for example, a feature followed by multiple refactors and another commit to add tests and docs should be combined into a single commit for that feature).
     - If you would like to make your local setup reject improperly formatted commit headers, you can add the following code to `interledger-rs/.git/hooks/commit-msg`:
 ```bash
 if head -n 1 "$1" | grep -vqE "^(feat|fix|docs|style|refactor|perf|test|chore|ci|build)(\(.{1,30}\))?:[ ].{5,100}$"; then
@@ -58,6 +58,7 @@ if head -n 1 "$1" | grep -vqE "^(feat|fix|docs|style|refactor|perf|test|chore|ci
 fi
 ```
 - Make pull requests against `master` branch of this repository (interledger-rs/interledger-rs) from your repository.
+- The pull request should contain no merge commits (required to pass CI).
 - If reviewers request some changes, please follow the instruction or make discussions if you have any constructive opinions on the PRs you made.
     - Then if you want to make some changes on your PRs, `push -f` is allowed to renew your branch after squashing your new commits. You don't need to open new PRs.
 - For our [examples](../examples/README.md), we adopted a [literate programming](https://en.wikipedia.org/wiki/Literate_programming) approach. The examples are described in Markdown with shell commands included. The [`run-md.sh`](../scripts/run-md.sh) script parses the commands out of the Markdown file and runs them. If you want to add examples, please make sure your instruction file can be parsed and run by that script.
