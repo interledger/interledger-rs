@@ -47,8 +47,7 @@ jobs:
       - name: Audit
         # FIXME: Disabled:
         # 1.   spin: is no longer actively maintained
-        # 2.   sized-chunks: no safe upgrade.
-        run: cargo audit --ignore RUSTSEC-2019-0031 --ignore RUSTSEC-2020-0041
+        run: cargo audit --ignore RUSTSEC-2019-0031
 
       - name: Test
         run: timeout 15m cargo test --all --all-features
