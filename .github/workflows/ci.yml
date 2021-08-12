@@ -48,8 +48,7 @@ jobs:
         # FIXME: Disabled:
         # 1.   spin: is no longer actively maintained
         # 2.   sized-chunks: no safe upgrade.
-        # 3+4. hyper: requires 18 exabytes of data transfer
-        run: cargo audit --ignore RUSTSEC-2019-0031 --ignore RUSTSEC-2020-0041 --ignore RUSTSEC-2021-0078 --ignore RUSTSEC-2021-0079
+        run: cargo audit --ignore RUSTSEC-2019-0031 --ignore RUSTSEC-2020-0041
 
       - name: Test
         run: timeout 15m cargo test --all --all-features
