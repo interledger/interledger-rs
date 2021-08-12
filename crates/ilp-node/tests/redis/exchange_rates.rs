@@ -2,11 +2,9 @@ use crate::redis_helpers::*;
 use crate::test_helpers::*;
 use ilp_node::InterledgerNode;
 use reqwest::Client;
-use secrecy::SecretString;
 use serde_json::{self, json, Value};
 use std::env;
 use std::time::Duration;
-use tracing::error;
 
 #[tokio::test]
 async fn coincap() {
@@ -32,7 +30,7 @@ async fn coincap() {
     node.serve(None).await.unwrap();
 
     // Wait a few seconds so our node can poll the API
-    tokio::time::delay_for(Duration::from_millis(1000)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     let ret = Client::new()
         .get(&format!("http://localhost:{}/rates", http_port))
@@ -64,12 +62,13 @@ async fn coincap() {
 async fn cryptocompare() {
     let context = TestContext::new();
 
-    let api_key = env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY");
-    if api_key.is_err() {
-        error!("Skipping cryptocompare test. Must configure an API key by setting ILP_TEST_CRYPTOCOMPARE_API_KEY to run this test");
-        return;
-    }
-    let api_key = SecretString::new(api_key.unwrap());
+    let api_key = match env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY") {
+        Ok(value) => value,
+        Err(_) => {
+            eprintln!("Skipping cryptocompare test. Must configure an API key by setting ILP_TEST_CRYPTOCOMPARE_API_KEY to run this test");
+            return;
+        }
+    };
 
     let http_port = get_open_port(Some(3011));
 
@@ -94,7 +93,7 @@ async fn cryptocompare() {
     node.serve(None).await.unwrap();
 
     // Wait a few seconds so our node can poll the API
-    tokio::time::delay_for(Duration::from_millis(1000)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     let ret = Client::new()
         .get(&format!("http://localhost:{}/rates", http_port))

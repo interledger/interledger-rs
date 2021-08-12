@@ -86,14 +86,13 @@ mod client_server {
 
     fn get_open_port() -> SocketAddr {
         for _i in 0..1000 {
-            let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+            let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
             socket.reuse_address().unwrap();
             if socket
                 .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
                 .is_ok()
             {
-                socket.listen(1).unwrap();
-                let listener = socket.into_tcp_listener();
+                let listener = std::net::TcpListener::from(socket);
                 return listener.local_addr().unwrap();
             }
         }

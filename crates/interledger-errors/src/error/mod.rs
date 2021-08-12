@@ -14,12 +14,7 @@ use std::{
     error::Error as StdError,
     fmt::{self, Display},
 };
-use warp::{
-    reject::{custom, Reject},
-    reply::json,
-    reply::Response,
-    Rejection, Reply,
-};
+use warp::{reject::Reject, reply::json, reply::Response, Rejection, Reply};
 
 /// API error type prefix of problems.
 /// This URL prefix is currently not published but we assume that in the future.
@@ -264,12 +259,6 @@ impl Reply for ApiError {
 
 impl StdError for ApiError {}
 
-impl From<ApiError> for Rejection {
-    fn from(from: ApiError) -> Self {
-        custom(from)
-    }
-}
-
 impl Reject for ApiError {}
 
 static MISSING_FIELD_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new("missing field `(.*)`").unwrap());
@@ -333,12 +322,6 @@ impl Reply for JsonDeserializeError {
         }
 
         error.into_response()
-    }
-}
-
-impl From<JsonDeserializeError> for Rejection {
-    fn from(from: JsonDeserializeError) -> Self {
-        custom(from)
     }
 }
 

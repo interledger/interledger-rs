@@ -72,7 +72,7 @@ async fn polls_for_route_updates() {
         .await
         .unwrap();
 
-    tokio::time::delay_for(Duration::from_millis(10)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
     let routing_table = store_clone_2.routing_table();
     assert_eq!(routing_table.len(), 3);
     assert_eq!(*routing_table.get("example.alice").unwrap(), bob_id);

@@ -23,9 +23,9 @@ async fn time_based_settlement() {
     let context = TestContext::new();
 
     let mut node_a_connections = context.get_client_connection_info();
-    node_a_connections.db = 1;
+    node_a_connections.redis.db = 1;
     let mut node_b_connections = context.get_client_connection_info();
-    node_b_connections.db = 2;
+    node_b_connections.redis.db = 2;
 
     let node_a_http = get_open_port(None);
     let node_a_settlement = get_open_port(None);
@@ -255,7 +255,7 @@ fn settlement_engine(
             .and(warp::path!("accounts"))
             .and(warp::body::json())
             .and_then(move |body: AccountInfo| {
-                let mut tx = tx.clone();
+                let tx = tx.clone();
                 async move {
                     tracing::trace!("begin sending");
                     tx.send(SettlementEngineEvent::AccountCreation(body.id))
@@ -274,7 +274,7 @@ fn settlement_engine(
             .and(warp::path!("accounts" / Uuid / "settlements"))
             .and(warp::body::json())
             .and_then(move |id: Uuid, body: SettlementInfo| {
-                let mut tx = tx.clone();
+                let tx = tx.clone();
                 let amount = body.amount.parse::<u64>().unwrap();
                 let scale = body.scale;
                 async move {
@@ -294,7 +294,7 @@ fn settlement_engine(
         .and(warp::path::peek())
         .and(warp::body::bytes())
         .and_then(move |p: warp::path::Peek, body| {
-            let mut tx = tx.clone();
+            let tx = tx.clone();
             tracing::warn!("{}: {:02x?}", p.as_str(), body);
             async move {
                 tx.send(SettlementEngineEvent::UnexpectedRequest(

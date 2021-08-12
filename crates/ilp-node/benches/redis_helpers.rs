@@ -13,17 +13,23 @@ use std::time::Duration;
 
 #[allow(unused)]
 pub fn connection_info_to_string(info: ConnectionInfo) -> String {
-    match info.addr.as_ref() {
-        ConnectionAddr::Tcp(url, port) => format!("redis://{}:{}/{}", url, port, info.db),
+    match info.addr {
+        ConnectionAddr::Tcp(url, port) => format!("redis://{}:{}/{}", url, port, info.redis.db),
         ConnectionAddr::Unix(path) => {
-            format!("redis+unix:{}?db={}", path.to_str().unwrap(), info.db)
+            format!("redis+unix:{}?db={}", path.to_str().unwrap(), info.redis.db)
         }
+        // FIXME: no idea what this should look like..
+        ConnectionAddr::TcpTls {
+            host,
+            port,
+            insecure,
+        } => todo!(),
     }
 }
 
 pub fn get_open_port(try_port: Option<u16>) -> u16 {
     if let Some(port) = try_port {
-        let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
         socket.reuse_address().unwrap();
         if socket
             .bind(
@@ -35,20 +41,20 @@ pub fn get_open_port(try_port: Option<u16>) -> u16 {
             .is_ok()
         {
             socket.listen(1).unwrap();
-            let listener = socket.into_tcp_listener();
+            let listener = std::net::TcpListener::from(socket);
             return listener.local_addr().unwrap().port();
         }
     }
 
     for _i in 0..1000 {
-        let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
         socket.reuse_address().unwrap();
         if socket
             .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
             .is_ok()
         {
             socket.listen(1).unwrap();
-            let listener = socket.into_tcp_listener();
+            let listener = std::net::TcpListener::from(socket);
             return listener.local_addr().unwrap().port();
         }
     }
@@ -57,7 +63,7 @@ pub fn get_open_port(try_port: Option<u16>) -> u16 {
 }
 
 pub async fn delay(ms: u64) {
-    tokio::time::delay_for(Duration::from_millis(ms)).await;
+    tokio::time::sleep(Duration::from_millis(ms)).await;
 }
 
 #[derive(PartialEq)]
@@ -96,13 +102,13 @@ impl RedisServer {
             ServerType::Tcp => {
                 // this is technically a race but we can't do better with
                 // the tools that redis gives us :(
-                let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+                let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
                 socket.reuse_address().unwrap();
                 socket
                     .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
                     .unwrap();
                 socket.listen(1).unwrap();
-                let listener = socket.into_tcp_listener();
+                let listener = std::net::TcpListener::from(socket);
                 let server_port = listener.local_addr().unwrap().port();
                 cmd.arg("--port")
                     .arg(server_port.to_string())
@@ -164,9 +170,12 @@ impl TestContext {
         let server = RedisServer::new();
 
         let client = redis::Client::open(redis::ConnectionInfo {
-            addr: Box::new(server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         })
         .unwrap();
         let mut con;
@@ -195,9 +204,12 @@ impl TestContext {
     // This one was added and not in the original file
     pub fn get_client_connection_info(&self) -> redis::ConnectionInfo {
         redis::ConnectionInfo {
-            addr: Box::new(self.server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: self.server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         }
     }
 

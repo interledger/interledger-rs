@@ -14,7 +14,7 @@ strict = []
 roundtrip-only = ["strict"]
 
 [dependencies]
-bytes = { package = "bytes", version = "0.5", features = ["serde"] }
+bytes = { package = "bytes", version = "1.0.1", features = ["serde"] }
 chrono = { version = "0.4.9", default-features = false, features = ["std"] }
 thiserror = { version = "1.0.10", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"], optional = true }

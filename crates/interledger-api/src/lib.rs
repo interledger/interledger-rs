@@ -68,6 +68,20 @@ where
     Ok(v.into_iter().map(|(k, Wrapper(v))| (k, v)).collect())
 }
 
+fn serialize_optional_secret_string<S>(
+    secret: &Option<SecretString>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use secrecy::ExposeSecret;
+    match secret {
+        Some(secret) => secret.expose_secret().serialize(serializer),
+        None => Option::<String>::None.serialize(serializer),
+    }
+}
+
 // TODO should the methods from this trait be split up and put into the
 // traits that are more specific to what they're doing?
 // One argument against doing that is that the NodeStore allows admin-only
@@ -153,14 +167,18 @@ pub struct ExchangeRates(
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AccountSettings {
     /// The account's incoming ILP over HTTP token.
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_http_incoming_token: Option<SecretString>,
     /// The account's incoming ILP over BTP token.
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_btp_incoming_token: Option<SecretString>,
     /// The account's outgoing ILP over HTTP token
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_http_outgoing_token: Option<SecretString>,
     /// The account's outgoing ILP over BTP token.
     /// This must match the ILP over BTP incoming token on the peer's node if exchanging
     /// packets with that peer.
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     /// The account's ILP over HTTP URL (this is where packets are sent over HTTP from your node)
     pub ilp_over_http_url: Option<String>,
@@ -223,20 +241,24 @@ pub struct AccountDetails {
     /// packets from that peer
     // TODO: The incoming token is used for both ILP over HTTP, and for authorizing actions from the HTTP API.
     // Should we add 1 more token, for more granular permissioning?
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_http_incoming_token: Option<SecretString>,
     /// The account's outgoing ILP over HTTP token
     /// This must match the ILP over HTTP incoming token on the peer's node if sending
     /// packets to that peer
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_http_outgoing_token: Option<SecretString>,
     /// The account's ILP over BTP URL (this is where packets are sent over WebSockets from your node)
     pub ilp_over_btp_url: Option<String>,
     /// The account's outgoing ILP over BTP token.
     /// This must match the ILP over BTP incoming token on the peer's node if exchanging
     /// packets with that peer.
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     /// The account's incoming ILP over BTP token.
     /// This must match the ILP over BTP outgoing token on the peer's node if exchanging
     /// packets with that peer.
+    #[serde(default, serialize_with = "serialize_optional_secret_string")]
     pub ilp_over_btp_incoming_token: Option<SecretString>,
     /// The threshold after which the balance service will trigger a settlement
     #[serde(default, deserialize_with = "optional_number_or_string")]

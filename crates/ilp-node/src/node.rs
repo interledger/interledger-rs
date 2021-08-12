@@ -420,8 +420,12 @@ impl InterledgerNode {
         let outgoing_service = match self.settle_every {
             Some(seconds) => {
                 use futures::stream::StreamExt;
+
                 let delay = Duration::from_secs(seconds.get().into());
                 let (tx, rx) = tokio::sync::mpsc::channel(128);
+
+                let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
+                let rx = rx.fuse();
 
                 start_delayed_settlement(delay, rx.fuse(), store.clone());
 

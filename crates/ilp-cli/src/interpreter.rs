@@ -4,7 +4,7 @@ use reqwest::{
     blocking::{Client, Response},
 };
 use std::collections::HashMap;
-use tungstenite::{connect, handshake::client::Request};
+use tokio_tungstenite::tungstenite::{connect, handshake::client::Request};
 use url::Url;
 
 #[non_exhaustive]
@@ -25,7 +25,7 @@ pub enum Error {
     #[error("Error parsing URL: {0}")]
     Url(#[from] url::ParseError),
     #[error("WebSocket error: {0}")]
-    Websocket(#[from] tungstenite::error::Error),
+    WebsocketErr(#[from] tokio_tungstenite::tungstenite::error::Error),
     #[error("HTTP error: {0}")]
     Http(#[from] http::Error),
 }

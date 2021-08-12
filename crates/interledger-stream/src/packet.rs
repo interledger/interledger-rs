@@ -1148,8 +1148,8 @@ mod fuzzing {
         }
         .build();
 
-        println!("{:?}", pkt.buffer_unencrypted.bytes());
-        println!("{:?}", other.buffer_unencrypted.bytes());
+        println!("{:?}", pkt.buffer_unencrypted.chunk());
+        println!("{:?}", other.buffer_unencrypted.chunk());
 
         assert_eq!(pkt, other);
     }

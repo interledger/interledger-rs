@@ -8,8 +8,8 @@ use interledger_service::*;
 use rand::random;
 use thiserror::Error;
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, trace};
-use tungstenite::Message;
 use url::Url;
 
 /// Create a BtpOutgoingService wrapping BTP connections to the accounts specified.

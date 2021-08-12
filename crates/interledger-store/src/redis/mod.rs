@@ -46,11 +46,11 @@ use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
-use redis_crate::AsyncCommands;
 use redis_crate::{
     self, cmd, from_redis_value, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue,
-    PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
+    PubSubCommands, RedisError, RedisWrite, ToRedisArgs, Value,
 };
+use redis_crate::{AsyncCommands, Script};
 use secrecy::{ExposeSecret, Secret, SecretBytesMut};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, str, str::FromStr, sync::Arc, time::Duration};

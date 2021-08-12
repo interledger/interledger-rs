@@ -48,13 +48,13 @@ impl RedisServer {
             ServerType::Tcp => {
                 // this is technically a race but we can't do better with
                 // the tools that redis gives us :(
-                let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+                let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
                 socket.reuse_address().unwrap();
                 socket
                     .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
                     .unwrap();
                 socket.listen(1).unwrap();
-                let listener = socket.into_tcp_listener();
+                let listener = std::net::TcpListener::from(socket);
                 let server_port = listener.local_addr().unwrap().port();
                 cmd.arg("--port")
                     .arg(server_port.to_string())
@@ -113,9 +113,12 @@ impl TestContext {
         let server = RedisServer::new();
 
         let client = redis::Client::open(redis::ConnectionInfo {
-            addr: Box::new(server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         })
         .unwrap();
         let mut con;
@@ -144,9 +147,12 @@ impl TestContext {
     // This one was added and not in the original file
     pub fn get_client_connection_info(&self) -> redis::ConnectionInfo {
         redis::ConnectionInfo {
-            addr: Box::new(self.server.get_client_addr().clone()),
-            db: 0,
-            passwd: None,
+            addr: self.server.get_client_addr().clone(),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: None,
+            },
         }
     }
 

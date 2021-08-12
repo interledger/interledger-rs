@@ -10,7 +10,7 @@ use ilp_node::InterledgerNode;
 use serde_json::{self, json};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::channel;
-use tungstenite::{client, handshake::client::Request};
+use tokio_tungstenite::tungstenite::{self, client, handshake::client::Request};
 
 mod redis_helpers;
 mod test_helpers;
@@ -36,9 +36,9 @@ fn multiple_payments_btp(c: &mut Criterion) {
     let context = TestContext::new();
 
     let mut connection_info1 = context.get_client_connection_info();
-    connection_info1.db = 1;
+    connection_info1.redis.db = 1;
     let mut connection_info2 = context.get_client_connection_info();
-    connection_info2.db = 2;
+    connection_info2.redis.db = 2;
 
     // accounts to be created on node a
     let alice_on_a = json!({
@@ -188,9 +188,9 @@ fn multiple_payments_http(c: &mut Criterion) {
     let context = TestContext::new();
 
     let mut connection_info1 = context.get_client_connection_info();
-    connection_info1.db = 1;
+    connection_info1.redis.db = 1;
     let mut connection_info2 = context.get_client_connection_info();
-    connection_info2.db = 2;
+    connection_info2.redis.db = 2;
 
     // accounts to be created on node a
     let alice_on_a = json!({
@@ -329,7 +329,7 @@ fn multiple_payments_http(c: &mut Criterion) {
 /// When runtime (rt) is dropped, error will happen ending the loop and then the websocket
 fn forward_payment_notifications(
     ws_request: tungstenite::http::Request<()>,
-    mut sender: tokio::sync::mpsc::Sender<tungstenite::Message>,
+    sender: tokio::sync::mpsc::Sender<tungstenite::Message>,
 ) -> Result<(), tungstenite::Error> {
     let mut payments_ws = client::connect(ws_request)?.0;
     while let Ok(message) = payments_ws.read_message() {
@@ -358,7 +358,7 @@ fn wait_for_propagation(
             if i == tries_until_timeout - 1 {
                 panic!("Timeout: Responses keep on failing: {:?}", response);
             }
-            tokio::time::delay_for(std::time::Duration::from_millis(delay_ms)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
         for _ in 0..received_message_count {
             // TODO check if received data is correct
