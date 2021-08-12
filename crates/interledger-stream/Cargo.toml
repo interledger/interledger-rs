@@ -19,7 +19,7 @@ interledger-packet = { path = "../interledger-packet", version = "1.0.0", defaul
 interledger-rates = { path = "../interledger-rates", version = "1.0.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "1.0.0", default-features = false }
 
-base64 = { version = "0.11.0", default-features = false, features = ["std"] }
+base64 = { version = "0.13.0", default-features = false, features = ["std"] }
 bytes = { version = "1.0.1" }
 chrono = { version = "0.4.9", default-features = false, features = ["clock"] }
 futures = { version = "0.3.7", default-features = false, features = ["std"] }
