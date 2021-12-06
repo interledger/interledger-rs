@@ -455,7 +455,7 @@ mod tests {
 
     #[derive(Clone)]
     struct LayeredService<I, A> {
-        next: I,
+        _next: I,
         account_type: PhantomData<A>,
     }
 
@@ -464,9 +464,9 @@ mod tests {
         I: IncomingService<A> + Send + Sync + 'static,
         A: Account,
     {
-        fn new_incoming(next: I) -> Self {
+        fn new_incoming(_next: I) -> Self {
             Self {
-                next,
+                _next,
                 account_type: PhantomData,
             }
         }
@@ -477,9 +477,9 @@ mod tests {
         I: OutgoingService<A> + Send + Sync + 'static,
         A: Account,
     {
-        fn new_outgoing(next: I) -> Self {
+        fn new_outgoing(_next: I) -> Self {
             Self {
-                next,
+                _next,
                 account_type: PhantomData,
             }
         }

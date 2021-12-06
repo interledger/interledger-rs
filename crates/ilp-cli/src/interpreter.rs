@@ -390,6 +390,7 @@ fn unflatten_pairs<'a>(matches: &'a ArgMatches) -> (&'a str, HashMap<&'a str, &'
     (matches.value_of("authorization_key").unwrap(), pairs)
 }
 
+#[allow(unused)]
 #[derive(Debug, serde::Deserialize)]
 struct XpringResponse {
     http_endpoint: String,
