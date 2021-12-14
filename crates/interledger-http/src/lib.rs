@@ -89,6 +89,7 @@ mod tests {
     use serde::Deserialize;
     use warp::test::request;
 
+    #[allow(unused)]
     #[derive(Deserialize, Clone)]
     struct TestJsonStruct {
         string_value: String,
