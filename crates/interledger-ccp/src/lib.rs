@@ -24,7 +24,7 @@ mod server;
 #[cfg(test)]
 mod test_helpers;
 
-pub use packet::{Mode, RouteControlRequest};
+pub use packet::{Mode, RouteControlRequest, RouteUpdateRequest};
 pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
 use serde::{Deserialize, Serialize};
