@@ -24,7 +24,7 @@ const FLAG_TRANSITIVE: u8 = 0x40;
 const FLAG_PARTIAL: u8 = 0x20;
 const FLAG_UTF8: u8 = 0x10;
 
-const ROUTING_TABLE_ID_LEN: usize = 16;
+pub const ROUTING_TABLE_ID_LEN: usize = 16;
 
 /// All epochs are u32
 const EPOCH_LEN: usize = 4;
