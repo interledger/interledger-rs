@@ -248,13 +248,13 @@ impl From<RouteControlRequest> for Prepare {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub(crate) struct RouteProp {
-    pub(crate) is_optional: bool,
-    pub(crate) is_transitive: bool,
-    pub(crate) is_partial: bool,
-    pub(crate) id: u16,
-    pub(crate) is_utf8: bool,
-    pub(crate) value: Bytes,
+pub struct RouteProp {
+    pub is_optional: bool,
+    pub is_transitive: bool,
+    pub is_partial: bool,
+    pub id: u16,
+    pub is_utf8: bool,
+    pub value: Bytes,
 }
 
 impl TryFrom<&mut &[u8]> for RouteProp {
@@ -318,12 +318,12 @@ impl RouteProp {
 }
 
 #[derive(Clone, PartialEq)]
-pub(crate) struct Route {
+pub struct Route {
     // TODO switch this to use the Address type so we don't need separate parsing logic when implementing Debug
-    pub(crate) prefix: String,
-    pub(crate) path: Vec<String>,
-    pub(crate) auth: [u8; AUTH_LEN],
-    pub(crate) props: Vec<RouteProp>,
+    pub prefix: String,
+    pub path: Vec<String>,
+    pub auth: [u8; AUTH_LEN],
+    pub props: Vec<RouteProp>,
 }
 
 impl Debug for Route {
@@ -405,14 +405,14 @@ impl Route {
 
 #[derive(Clone, PartialEq)]
 pub struct RouteUpdateRequest {
-    pub(crate) routing_table_id: [u8; ROUTING_TABLE_ID_LEN],
-    pub(crate) current_epoch_index: u32,
-    pub(crate) from_epoch_index: u32,
-    pub(crate) to_epoch_index: u32,
-    pub(crate) hold_down_time: u32,
-    pub(crate) speaker: Address,
-    pub(crate) new_routes: Vec<Route>,
-    pub(crate) withdrawn_routes: Vec<String>,
+    pub routing_table_id: [u8; ROUTING_TABLE_ID_LEN],
+    pub current_epoch_index: u32,
+    pub from_epoch_index: u32,
+    pub to_epoch_index: u32,
+    pub hold_down_time: u32,
+    pub speaker: Address,
+    pub new_routes: Vec<Route>,
+    pub withdrawn_routes: Vec<String>,
 }
 
 impl Debug for RouteUpdateRequest {
