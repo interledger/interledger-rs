@@ -29,7 +29,7 @@ pub const ROUTING_TABLE_ID_LEN: usize = 16;
 /// All epochs are u32
 const EPOCH_LEN: usize = 4;
 
-const AUTH_LEN: usize = 32;
+pub const AUTH_LEN: usize = 32;
 
 pub static CCP_RESPONSE: Lazy<Fulfill> = Lazy::new(|| {
     FulfillBuilder {
