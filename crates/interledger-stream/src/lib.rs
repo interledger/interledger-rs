@@ -13,7 +13,7 @@ mod crypto;
 /// Stream errors
 mod error;
 /// Stream Packet implementation, [as specified in the RFC](https://interledger.org/rfcs/0029-stream/#5-packet-and-frame-specification)
-mod packet;
+pub mod packet;
 /// A stream server implementing an [Outgoing Service](../interledger_service/trait.OutgoingService.html) for receiving STREAM payments from peers
 mod server;
 
