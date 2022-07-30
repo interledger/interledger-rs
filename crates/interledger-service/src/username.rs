@@ -98,6 +98,14 @@ mod tests {
     }
 
     #[test]
+    fn comparison_works() {
+        assert_ne!(
+            Username::from_str("ẽfoobara").unwrap(),
+            Username::from_str("ẽFoObAr").unwrap()
+        );
+    }
+
+    #[test]
     fn too_long_name() {
         assert!(Username::from_str("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").is_err());
     }

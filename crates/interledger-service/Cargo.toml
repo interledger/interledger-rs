@@ -19,7 +19,7 @@ futures = { version = "0.3.7", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
 regex = { version = "1.3.1", default-features = false, features = ["std", "unicode-perl"] }
 once_cell = { version = "1.3.1", default-features = false, features = ["std"] }
-unicase = { version = "2.5.1", default-features = false }
+unicase = { version = "2.6.0", default-features = false }
 unicode-normalization = { version = "0.1.8", default-features = false }
 uuid = { version = "0.8.1", default-features = false}
 async-trait = { version = "0.1.22", default-features = false }
