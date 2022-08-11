@@ -593,7 +593,7 @@ impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame {
     }
 }
 
-impl<'a> fmt::Debug for ConnectionNewAddressFrame {
+impl fmt::Debug for ConnectionNewAddressFrame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
