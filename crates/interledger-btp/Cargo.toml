@@ -17,7 +17,7 @@ interledger-service = { path = "../interledger-service", version = "1.0.0", defa
 
 bytes = { version = "1.0.1" }
 chrono = { version = "0.4.20", default-features = false }
-futures = { version = "0.3.7", default-features = false }
+futures = { version = "0.3.7", default-features = false, features = ["std"] }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 parking_lot = { version = "0.10.0", default-features = false }
 thiserror = { version = "1.0.10", default-features = false }
