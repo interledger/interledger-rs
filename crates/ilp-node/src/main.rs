@@ -39,10 +39,9 @@ async fn main() {
     let app = cmdline_configuration(&version);
     let args = std::env::args_os().collect::<Vec<_>>();
 
-    let stdin = std::io::stdin();
-
     let additional_config = if !is_fd_tty(0) {
         // this might be read by load_configuration, depending on the presence of a config file
+        let stdin = std::io::stdin();
         let lock = stdin.lock();
         Some(lock)
     } else {
@@ -67,8 +66,6 @@ async fn main() {
             panic!("Could not parse provided configuration options into an Interledger Node config: {}", e);
         }
     };
-
-    drop(stdin);
 
     cfg_if! {
         if #[cfg(feature = "monitoring")] {
