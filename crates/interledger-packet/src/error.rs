@@ -152,8 +152,14 @@ mod test_error_code {
     #[test]
     fn control_characters_escaped() {
         let bogus = ErrorCode::new(*b"\x00\x01\x02").unwrap();
-        assert_eq!(&bogus.to_string(), "\"\\u{0}\\u{1}\\u{2}\"");
-        assert_eq!(&format!("{:?}", bogus), "ErrorCode(\"\\u{0}\\u{1}\\u{2}\")");
+
+        // some recent-ish (around 1.62.1) changed how the \0 is escaped, accept both.
+        let s = bogus.to_string();
+        assert!(
+            s == "\"\\u{0}\\u{1}\\u{2}\"" || s == "\"\\0\\u{1}\\u{2}\"",
+            "unexpected escaping: {}",
+            s
+        );
 
         let good = ErrorCode::new(*b"T01").unwrap();
         assert_eq!(&good.to_string(), "T01");

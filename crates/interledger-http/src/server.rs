@@ -210,7 +210,7 @@ mod tests {
         let resp = api_call(
             &api,
             "/accounts/alice/ilp",
-            &format!("{}:{}", USERNAME.to_string(), AUTH_PASSWORD),
+            &format!("{}:{}", *USERNAME, AUTH_PASSWORD),
         )
         .await;
         assert_eq!(resp.status().as_u16(), 401);

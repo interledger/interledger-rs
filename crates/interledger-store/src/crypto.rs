@@ -161,7 +161,7 @@ pub fn decrypt_token(
     let nonce = aead::Nonce::assume_unique_for_key(nonce);
 
     if let Ok(token) = decryption_key.open_in_place(nonce, aead::Aad::empty(), &mut encrypted) {
-        Ok(SecretBytesMut::new(&token[..]))
+        Ok(SecretBytesMut::new(&*token))
     } else {
         Err(DecryptError)
     }

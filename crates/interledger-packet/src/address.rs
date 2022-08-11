@@ -186,7 +186,7 @@ impl Address {
     }
 }
 
-impl<'a> PartialEq<[u8]> for Address {
+impl PartialEq<[u8]> for Address {
     fn eq(&self, other: &[u8]) -> bool {
         self.0 == other
     }
