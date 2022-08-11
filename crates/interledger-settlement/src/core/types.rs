@@ -216,8 +216,10 @@ impl Convert for u64 {
     type Item = u64;
 
     fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ConversionError> {
-        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
-        let scale = 10u64.pow(scale_diff.into());
+        // FIXME: it's a bit sketchy how this was planned to work with i8 substraction overflow,
+        // widened to i32 for now, which might not be right either.
+        let scale_diff = (details.from as i32 - details.to as i32).unsigned_abs();
+        let scale = 10u64.pow(scale_diff);
         let (res, overflow) = if details.to >= details.from {
             self.overflowing_mul(scale)
         } else {
@@ -250,8 +252,9 @@ impl Convert for BigUint {
     type Item = BigUint;
 
     fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ConversionError> {
-        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
-        let scale = 10u64.pow(scale_diff.into());
+        // FIXME: see u64::normalize_scale
+        let scale_diff = (details.from as i32 - details.to as i32).unsigned_abs();
+        let scale = 10u64.pow(scale_diff);
         if details.to >= details.from {
             Ok(self.mul(scale))
         } else {
