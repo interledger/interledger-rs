@@ -365,7 +365,7 @@ where
                     // Drop the trigger here since we've gotten the response
                     // and don't need to keep the connections open if this was the
                     // last thing we were waiting for
-                    let _ = keep_connections_open;
+                    drop(keep_connections_open);
                     match result {
                         // This can be either a reject or a fulfill packet
                         Ok(packet) => packet,

@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn fuzz_0_preallocation() {
         // this allocates 8_356_511_975_664 bytes
-        let _ = crate::packet::RouteUpdateRequest::fuzz_from_prepare_data(&[
+        crate::packet::RouteUpdateRequest::fuzz_from_prepare_data(&[
             10, 1, 0, 0, 0, 0, 0, 0, 24, 81, 0, 1, 0, 0, 103, 103, 103, 103, 103, 103, 103, 103,
             103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 46, 103, 103, 103, 103,
             103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103,
@@ -160,14 +160,14 @@ mod tests {
     #[test]
     fn fuzz_1_preallocation() {
         // this allocates 103_079_215_104 bytes
-        let _ = crate::packet::RouteControlRequest::fuzz_from_prepare_data(&[
+        crate::packet::RouteControlRequest::fuzz_from_prepare_data(&[
             1, 1, 1, 0, 0, 59, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 5, 1, 0, 0, 0, 0, 59,
         ]);
     }
 
     #[test]
     fn fuzz_2_len_check() {
-        let _ = crate::packet::RouteUpdateRequest::fuzz_from_prepare_data(&[
+        crate::packet::RouteUpdateRequest::fuzz_from_prepare_data(&[
             10, 255, 255, 255, 255, 159, 159, 159, 159, 49, 10, 255, 10, 159, 159, 159, 46, 255,
             255, 255,
         ]);
