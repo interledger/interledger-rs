@@ -21,7 +21,7 @@ interledger-service = { path = "../interledger-service", version = "1.0.0", defa
 
 base64 = { version = "0.13.0", default-features = false, features = ["std"] }
 bytes = { version = "1.0.1" }
-chrono = { version = "0.4.9", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.20", default-features = false, features = ["clock"] }
 futures = { version = "0.3.7", default-features = false, features = ["std"] }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 num = { version = "0.2.1" }
