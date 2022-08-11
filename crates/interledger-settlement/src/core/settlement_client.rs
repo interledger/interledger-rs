@@ -110,12 +110,11 @@ impl SettlementClient {
             se_url.clone()
         );
 
-        Ok(self
-            .client
+        self.client
             .post(se_url.as_ref())
             .json(&json!({ "id": id.to_string() }))
             .send()
-            .await?)
+            .await
     }
 
     pub async fn send_settlement_once(
@@ -151,7 +150,7 @@ impl SettlementClient {
             .send()
             .await?;
 
-        Ok(response.error_for_status()?)
+        response.error_for_status()
     }
 }
 
