@@ -43,7 +43,7 @@ pub enum TrailingBytesError {
 ///
 /// See the [RFC-0030] for details.
 /// [RFC-0030]: https://github.com/interledger/rfcs/blob/master/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md
-#[derive(PartialEq, Debug, thiserror::Error)]
+#[derive(PartialEq, Eq, Debug, thiserror::Error)]
 pub enum OerError {
     #[error("buffer too small")]
     UnexpectedEof,
@@ -55,7 +55,7 @@ pub enum OerError {
     VariableLengthTimestamp(#[from] VariableLengthTimestampError),
 }
 
-#[derive(PartialEq, Debug, thiserror::Error)]
+#[derive(PartialEq, Eq, Debug, thiserror::Error)]
 pub enum LengthPrefixError {
     #[error("indefinite lengths are not allowed")]
     IndefiniteLength,
@@ -70,7 +70,7 @@ pub enum LengthPrefixError {
     StrictLeadingZeros,
 }
 
-#[derive(PartialEq, Debug, thiserror::Error)]
+#[derive(PartialEq, Eq, Debug, thiserror::Error)]
 pub enum VarUintError {
     #[error("var uint has zero length")]
     ZeroLength,
@@ -78,7 +78,7 @@ pub enum VarUintError {
     TooLarge,
 }
 
-#[derive(PartialEq, Debug, thiserror::Error)]
+#[derive(PartialEq, Eq, Debug, thiserror::Error)]
 pub enum VariableLengthTimestampError {
     #[error("Invalid length for variable length timestamp: {0}")]
     InvalidLength(usize),

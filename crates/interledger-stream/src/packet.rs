@@ -123,7 +123,7 @@ impl<'a> StreamPacketBuilder<'a> {
 }
 
 /// A Stream Packet as specified in its [ASN.1 definition](https://interledger.org/rfcs/asn1/Stream.asn)
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct StreamPacket {
     /// The cleartext serialized packet
     pub(crate) buffer_unencrypted: BytesMut,
@@ -369,7 +369,7 @@ impl<'a> fmt::Debug for FrameIterator<'a> {
 }
 
 /// Enum around the different Stream Frame types
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum Frame<'a> {
     ConnectionClose(ConnectionCloseFrame<'a>),
     ConnectionNewAddress(ConnectionNewAddressFrame),
@@ -411,7 +411,7 @@ impl<'a> fmt::Debug for Frame<'a> {
 }
 
 /// The Stream Frame types [as defined in the RFC](https://interledger.org/rfcs/0029-stream/#53-frames)
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
 pub enum FrameType {
     ConnectionClose = 0x01,
@@ -454,7 +454,7 @@ impl From<u8> for FrameType {
 }
 
 /// The STREAM Error Codes [as defined in the RFC](https://interledger.org/rfcs/0029-stream/#54-error-codes)
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
 pub enum ErrorCode {
     NoError,
@@ -522,7 +522,7 @@ pub trait SerializableFrame<'a>: Sized {
 
 /// Frame after which a connection must be closed.
 /// If implementations allow half-open connections, an endpoint may continue sending packets after receiving a ConnectionClose frame.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConnectionCloseFrame<'a> {
     /// Machine-readable [Error Code](./enum.ErrorCode.html) indicating why the connection was closed.
     pub code: ErrorCode,
@@ -552,7 +552,7 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UnknownFrameData<'a> {
     frame_type: u8,
     content: &'a [u8],
@@ -572,7 +572,7 @@ impl<'a> UnknownFrameData<'a> {
 }
 
 /// Frame which contains the sender of the Stream payment
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct ConnectionNewAddressFrame {
     /// New ILP address of the endpoint that sent the frame.
     pub source_account: Address,
@@ -605,7 +605,7 @@ impl fmt::Debug for ConnectionNewAddressFrame {
 
 /// The assets being transported in this Stream payment
 /// Asset details exposed by this frame MUST NOT change during the lifetime of a Connection.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConnectionAssetDetailsFrame<'a> {
     /// Asset code of endpoint that sent the frame.
     pub source_asset_code: &'a str,
@@ -635,7 +635,7 @@ impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
 }
 
 /// Endpoints MUST NOT exceed the total number of bytes the other endpoint is willing to accept.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConnectionMaxDataFrame {
     /// The total number of bytes the endpoint is willing to receive on this connection.
     pub max_offset: u64,
@@ -655,7 +655,7 @@ impl<'a> SerializableFrame<'a> for ConnectionMaxDataFrame {
 }
 
 /// Frame specifying the amount of data which is going to be sent
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConnectionDataBlockedFrame {
     /// The total number of bytes the endpoint wants to send.
     pub max_offset: u64,
@@ -675,7 +675,7 @@ impl<'a> SerializableFrame<'a> for ConnectionDataBlockedFrame {
 }
 
 /// Frame specifying the maximum stream ID the endpoint is willing to accept.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConnectionMaxStreamIdFrame {
     /// The maximum stream ID the endpoint is willing to accept.
     pub max_stream_id: u64,
@@ -695,7 +695,7 @@ impl<'a> SerializableFrame<'a> for ConnectionMaxStreamIdFrame {
 }
 
 /// Frame specifying the maximum stream ID the endpoint wishes to open.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConnectionStreamIdBlockedFrame {
     /// The maximum stream ID the endpoint wishes to open.
     pub max_stream_id: u64,
@@ -717,7 +717,7 @@ impl<'a> SerializableFrame<'a> for ConnectionStreamIdBlockedFrame {
 /// Endpoints MUST close the stream after receiving this stream immediately.
 /// If implementations allow half-open streams, an endpoint MAY continue sending
 /// money or data for this stream after receiving a StreamClose frame.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StreamCloseFrame<'a> {
     /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
@@ -766,7 +766,7 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
 /// stream amounts are rounded down.
 ///
 /// The remainder is be allocated to the lowest-numbered open stream that has not reached its maximum receive amount.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StreamMoneyFrame {
     /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
@@ -795,7 +795,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyFrame {
 /// endpoint sending the frame, so the other endpoint must use their
 /// calculated exchange rate to determine how much more they can send
 /// for this stream.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StreamMaxMoneyFrame {
     /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
@@ -829,7 +829,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxMoneyFrame {
 }
 
 /// Frame specifying the maximum amount of money the sending endpoint will send
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StreamMoneyBlockedFrame {
     /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
@@ -878,7 +878,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
 /// In other words, if a sender resends data (e.g. because a packet was lost),
 /// it MUST resend the exact frames — offset and data.
 /// This rule exists to simplify data reassembly for the receiver
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StreamDataFrame<'a> {
     /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
@@ -910,7 +910,7 @@ impl<'a> SerializableFrame<'a> for StreamDataFrame<'a> {
 }
 
 /// The maximum amount of data the endpoint is willing to receive on this stream
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StreamMaxDataFrame {
     /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
@@ -937,7 +937,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxDataFrame {
 }
 
 /// The maximum amount of data the endpoint is willing to send on this stream
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StreamDataBlockedFrame {
     /// Identifier of the stream this frame refers to.
     pub stream_id: u64,

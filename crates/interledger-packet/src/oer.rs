@@ -205,7 +205,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct VariableLengthTimestamp {
     inner: chrono::DateTime<chrono::Utc>,
     len: u8,
