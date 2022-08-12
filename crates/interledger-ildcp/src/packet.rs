@@ -56,7 +56,7 @@ impl From<IldcpRequest> for Prepare {
 }
 
 /// The response to an ILDCP Request.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct IldcpResponse {
     /// Serialized buffer of the response
     buffer: Bytes,
@@ -139,7 +139,7 @@ impl fmt::Debug for IldcpResponse {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct IldcpResponseBuilder<'a> {
     pub ilp_address: &'a Address,
     pub asset_scale: u8,

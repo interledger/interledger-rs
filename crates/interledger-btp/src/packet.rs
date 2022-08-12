@@ -42,7 +42,7 @@ impl From<u8> for PacketType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BtpPacket {
     Message(BtpMessage),
     Response(BtpResponse),
@@ -71,7 +71,7 @@ impl Serializable<BtpPacket> for BtpPacket {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ContentType {
     ApplicationOctetStream,
     TextPlainUtf8,
@@ -103,7 +103,7 @@ impl From<ContentType> for u8 {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProtocolData {
     pub protocol_name: Cow<'static, str>,
     pub content_type: ContentType,
@@ -166,7 +166,7 @@ fn check_no_trailing_bytes(buf: &[u8]) -> Result<(), BtpPacketError> {
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BtpMessage {
     pub request_id: u32,
     pub protocol_data: Vec<ProtocolData>,
@@ -210,7 +210,7 @@ impl Serializable<BtpMessage> for BtpMessage {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BtpResponse {
     pub request_id: u32,
     pub protocol_data: Vec<ProtocolData>,
@@ -253,7 +253,7 @@ impl Serializable<BtpResponse> for BtpResponse {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BtpError {
     pub request_id: u32,
     pub code: String,

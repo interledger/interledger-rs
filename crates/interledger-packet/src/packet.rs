@@ -21,7 +21,7 @@ const ERROR_CODE_LEN: usize = 3;
 // is used for much more lenient timestamps with 0-3 fractions.
 static INTERLEDGER_TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S%3f";
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketType {
     Prepare = 12,
@@ -58,7 +58,7 @@ impl TryFrom<u8> for PacketType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Packet {
     Prepare(Prepare),
     Fulfill(Fulfill),
@@ -105,7 +105,7 @@ impl From<Reject> for Packet {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Prepare {
     buffer: BytesMut,
     content_offset: usize,
@@ -115,7 +115,7 @@ pub struct Prepare {
     data_offset: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrepareBuilder<'a> {
     pub amount: u64,
     pub expires_at: SystemTime,
@@ -324,13 +324,13 @@ impl<'a> PrepareBuilder<'a> {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Fulfill {
     buffer: BytesMut,
     content_offset: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FulfillBuilder<'a> {
     pub fulfillment: &'a [u8; 32],
     pub data: &'a [u8],
@@ -421,7 +421,7 @@ impl<'a> FulfillBuilder<'a> {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Reject {
     buffer: BytesMut,
     code: ErrorCode,
@@ -430,7 +430,7 @@ pub struct Reject {
     data_offset: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RejectBuilder<'a> {
     pub code: ErrorCode,
     pub message: &'a [u8],
@@ -612,7 +612,7 @@ fn deserialize_envelope(
     Ok((content_offset, content))
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaxPacketAmountDetails {
     amount_received: u64,
     max_amount: u64,

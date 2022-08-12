@@ -99,7 +99,7 @@ impl From<AddressError> for CcpPacketError {
 /// CCP Packet mode used in Route Control Requests of the CCP protocol.
 /// Idle: Account does not wish to receive more routes
 /// Sync: Account wishes to receive routes
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum Mode {
     Idle = 0,
@@ -126,7 +126,7 @@ impl TryFrom<u8> for Mode {
 /// A request that ask the receiver node to transition to Idle or Sync mode.
 /// If the mode is Idle, the receiver of the request will stop broadcasting routes to the sender.
 /// If the mode is Sync, the receiver will start broadcasting routes to that account.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RouteControlRequest {
     pub mode: Mode,
     pub last_known_routing_table_id: [u8; ROUTING_TABLE_ID_LEN],

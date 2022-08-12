@@ -209,7 +209,7 @@ impl serde::Serialize for Address {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&*self)
+        serializer.serialize_str(self)
     }
 }
 

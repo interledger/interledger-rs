@@ -9,7 +9,7 @@ use interledger_errors::*;
 use tracing::error;
 
 /// Data stored for the idempotency features
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdempotentData {
     /// The HTTP Status Code of the API's response
     pub status: StatusCode,
