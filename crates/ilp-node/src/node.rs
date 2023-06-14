@@ -620,11 +620,18 @@ impl InterledgerNode {
             }
         }
 
+        let cors = warp::cors()
+            .allow_origin("http://localhost:3000")
+            .allow_headers(vec!["Content-Type", "Authorization", "Access-Control-Allow-Origin"])
+            .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            .allow_any_origin();
         let api = api
+            .with(cors.clone())
             .recover(default_rejection_handler)
             .with(warp::log("interledger-api"))
             .boxed();
 
+        info!(target: "interledger-node", "Interledger.rs node CORS: {:?}", cors);
         info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
         spawn(warp::serve(api).bind(http_bind_address));
 
