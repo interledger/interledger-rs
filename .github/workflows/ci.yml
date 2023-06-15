@@ -26,6 +26,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y redis-server redis-tools libssl-dev
 
+      - name: Setting Environment Variables
+        run: |
+          export OPENSSL_INCLUDE_DIR=/usr/include/openssl/
+          export OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu/
+
       - name: Install rust toolchain
         uses: hecrj/setup-rust-action@v1.3.4
         with:
@@ -36,7 +41,7 @@ jobs:
         uses: Swatinem/rust-cache@v1
 
       - name: Build
-        run: cargo build --all-features --all-targets
+        run: OPENSSL_INCLUDE_DIR=/usr/include/openssl/ OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu/ cargo build --all-features --all-targets
 
       - name: Cargo fmt
         run: cargo fmt --all -- --check
