@@ -314,33 +314,32 @@ where
     /// Remove invalid routes before processing the Route Update Request
     #[allow(clippy::cognitive_complexity)]
     fn filter_routes(&self, mut update: RouteUpdateRequest) -> RouteUpdateRequest {
-        update.new_routes = update
-            .new_routes
-            .into_iter()
-            .filter(|route| {
-                let ilp_address = self.ilp_address.read();
-                let address_scheme = (*ilp_address).scheme();
-                if !route.prefix.starts_with(address_scheme) {
-                    warn!("Got route for a different global prefix: {:?}", route);
-                    false
-                } else if route.prefix.len() <= address_scheme.len() + 1 {
-                    // note the + 1 is due to address_scheme not including a trailing "."
-                    warn!("Got route broadcast for the global prefix: {:?}", route);
-                    false
-                } else if route.prefix.starts_with(&ilp_address as &str) {
-                    trace!("Ignoring route broadcast for a prefix that starts with our own address: {:?}", route);
-                    false
-                } else if route.path.iter().any(|p| p == &ilp_address as &str) {
-                    trace!(
-                        "Ignoring route broadcast for a route that includes us: {:?}",
-                        route
-                    );
-                    false
-                } else {
-                    true
-                }
-            })
-            .collect();
+        update.new_routes.retain(|route| {
+            let ilp_address = self.ilp_address.read();
+            let address_scheme = (*ilp_address).scheme();
+            if !route.prefix.starts_with(address_scheme) {
+                warn!("Got route for a different global prefix: {:?}", route);
+                false
+            } else if route.prefix.len() <= address_scheme.len() + 1 {
+                // note the + 1 is due to address_scheme not including a trailing "."
+                warn!("Got route broadcast for the global prefix: {:?}", route);
+                false
+            } else if route.prefix.starts_with(&ilp_address as &str) {
+                debug!(
+                    "Ignoring route broadcast for a prefix that starts with our own address: {:?}",
+                    route
+                );
+                false
+            } else if route.path.iter().any(|p| p == &ilp_address as &str) {
+                debug!(
+                    "Ignoring route broadcast for a route that includes us: {:?}",
+                    route
+                );
+                false
+            } else {
+                true
+            }
+        });
         update
     }
 
@@ -825,10 +824,7 @@ where
                 new_routes.push(new_route.clone());
                 // If the route was previously withdrawn, ignore that now since it was added back
                 if withdrawn_routes.contains(&new_route.prefix) {
-                    withdrawn_routes = withdrawn_routes
-                        .into_iter()
-                        .filter(|prefix| prefix != &new_route.prefix)
-                        .collect();
+                    withdrawn_routes.retain(|prefix| prefix != &new_route.prefix);
                 }
             }
 
@@ -839,10 +835,7 @@ where
                     .iter()
                     .any(|route| route.prefix.as_str() == withdrawn_route.as_str())
                 {
-                    new_routes = new_routes
-                        .into_iter()
-                        .filter(|route| route.prefix.as_str() != withdrawn_route.as_str())
-                        .collect();
+                    new_routes.retain(|route| route.prefix.as_str() != withdrawn_route.as_str())
                 }
             }
         }

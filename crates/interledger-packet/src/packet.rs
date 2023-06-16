@@ -152,7 +152,7 @@ impl TryFrom<BytesMut> for Prepare {
 
         if !read_expires_at
             .iter()
-            .map(|e| (b'0'..=b'9').contains(e))
+            .map(|e| e.is_ascii_digit())
             .fold(true, |a, b| a & b)
         {
             return Err(ParseError::TimestampConversion);

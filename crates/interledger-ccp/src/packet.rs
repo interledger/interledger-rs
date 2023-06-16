@@ -135,7 +135,7 @@ pub struct RouteControlRequest {
 }
 
 impl Debug for RouteControlRequest {
-    fn fmt<'a>(&self, fmt: &mut fmt::Formatter<'a>) -> Result<(), fmt::Error> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         fmt.debug_struct("RouteControlRequest")
             .field("mode", &self.mode)
             .field(

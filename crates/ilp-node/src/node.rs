@@ -622,7 +622,11 @@ impl InterledgerNode {
 
         let cors = warp::cors()
             .allow_origin("http://localhost:3000")
-            .allow_headers(vec!["Content-Type", "Authorization", "Access-Control-Allow-Origin"])
+            .allow_headers(vec![
+                "Content-Type",
+                "Authorization",
+                "Access-Control-Allow-Origin",
+            ])
             .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
             .allow_any_origin();
         let api = api

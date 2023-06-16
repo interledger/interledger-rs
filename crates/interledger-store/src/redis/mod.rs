@@ -1215,7 +1215,7 @@ impl NodeStore for RedisStore {
         let accounts = routes.iter().map(|(_prefix, account_id)| account_id);
         let mut pipe = redis_crate::pipe();
         for account_id in accounts {
-            pipe.exists(accounts_key(&self.db_prefix, (*account_id).0));
+            pipe.exists(accounts_key(&self.db_prefix, account_id.0));
         }
 
         let routing_table = self.routes.clone();

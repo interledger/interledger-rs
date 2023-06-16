@@ -75,6 +75,9 @@ docker run -it interledgerrs/ilp-settlement-ethereum
 git clone https://github.com/interledger-rs/interledger-rs && cd interledger-rs
 
 # 2. Build interledger-rs (add `--release` to compile the release version, which is slower to compile but faster to run)
+# This is temporary fix to OPENSSL build error.
+export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
 cargo build
 ```
 
@@ -83,6 +86,10 @@ You can find the Interledger Settlement Engines in a [separate repository](https
 #### Run
 
 ```bash #
+# This is temporary fix to OPENSSL build error.
+export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+
 # This runs the ilp-node
 cargo run --bin ilp-node -- # Put CLI args after the "--"
 

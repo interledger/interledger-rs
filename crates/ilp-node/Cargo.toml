@@ -55,7 +55,7 @@ tokio-stream = { version = "0.1.7", features = ["sync"] }
 tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 url = { version = "2.1.1", default-features = false }
 libc = { version = "0.2.62", default-features = false }
-warp = { version = "0.3.1", default-features = false, features = ["websocket"] }
+warp = { version = "0.3.5", default-features = false, features = ["websocket"] }
 secrecy = { version = "0.8", default-features = false, features = ["alloc", "serde"] }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
 
@@ -71,9 +71,9 @@ yup-oauth2 = { version = "5.1.0", optional = true }
 tracing-futures = { version = "0.2", default-features = false, features = ["std", "futures-03"], optional = true }
 tracing-subscriber = { version = "0.2.0", default-features = false, features = ["tracing-log", "fmt", "env-filter", "chrono"], optional = true }
 tracing-appender = { version = "0.1", optional = true }
-metrics = { version = "0.12.0", default-features = false, features = ["std"], optional = true }
+metrics = { version = "0.12.1", default-features = false, features = ["std"], optional = true }
 metrics-core = { version = "0.5.1", default-features = false, optional = true }
-metrics-runtime = { version = "0.13.0", default-features = false, features = ["metrics-observer-prometheus"], optional = true }
+metrics-runtime = { version = "0.13.1", default-features = false, features = ["metrics-observer-prometheus"], optional = true }
 
 [dev-dependencies]
 base64 = { version = "0.13.0", default-features = false }

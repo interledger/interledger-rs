@@ -51,7 +51,7 @@ impl ConnectionGenerator {
     /// The `destination_account` is generated such that the `shared_secret` can be re-derived
     /// from a Prepare packet's destination and the same server secret.
     pub fn generate_address_and_secret(&self, base_address: &Address) -> (Address, [u8; 32]) {
-        let token = base64::encode_config(&generate_token(), base64::URL_SAFE_NO_PAD);
+        let token = base64::encode_config(generate_token(), base64::URL_SAFE_NO_PAD);
         // Note the shared secret is generated from the base64-encoded version of the token,
         // rather than from the unencoded bytes
         let shared_secret = hmac_sha256(&self.secret_generator[..], token.as_bytes());

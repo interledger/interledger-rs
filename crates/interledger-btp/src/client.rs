@@ -85,7 +85,7 @@ where
         // schemes, and "ws" is considered special.
         // The unwrap cannot fail since we've already been given a valid
         // URL, and in this branch we know it begins with "btp+".
-        url = Url::parse(&url.into_string()[4..]).unwrap();
+        url = Url::parse(&url.to_string()[4..]).unwrap();
     }
     let token = account
         .get_ilp_over_btp_outgoing_token()

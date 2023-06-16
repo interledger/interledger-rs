@@ -92,7 +92,7 @@ where
 
             match outgoing_amount {
                 Ok(outgoing_amount) => {
-                    request.prepare.set_amount(outgoing_amount as u64);
+                    request.prepare.set_amount(outgoing_amount);
                     trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}",
                         request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(),
                         outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());

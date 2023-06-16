@@ -96,7 +96,7 @@ async fn main() {
     futures::future::pending().await
 }
 
-fn cmdline_configuration<'b>(version: &'b str) -> clap::App<'static, 'b> {
+fn cmdline_configuration(version: &str) -> clap::App<'static, '_> {
     // The naming convention of arguments
     //
     // - URL vs URI

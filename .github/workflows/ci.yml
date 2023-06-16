@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y redis-server redis-tools libssl-dev
+          sudo apt-get install -y redis-server redis-tools pkg-config libssl-dev
 
       - name: Install rust toolchain
         uses: hecrj/setup-rust-action@v1.3.4
@@ -36,19 +36,34 @@ jobs:
         uses: Swatinem/rust-cache@v1
 
       - name: Build
-        run: cargo build --all-features --all-targets
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          cargo build --all-features --all-targets
 
       - name: Cargo fmt
-        run: cargo fmt --all -- --check
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          cargo fmt --all -- --check
 
       - name: Cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Audit
-        run: cargo audit --ignore RUSTSEC-2021-0113 --ignore RUSTSEC-2020-0071
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          cargo audit --ignore RUSTSEC-2021-0113 --ignore RUSTSEC-2020-0071
 
       - name: Test
-        run: timeout 15m cargo test --all --all-features
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          timeout 15m cargo test --all --all-features
 
   interledger-packet:
     env:
@@ -96,11 +111,22 @@ jobs:
         uses: Swatinem/rust-cache@v1
 
       - name: Test
-        run: timeout 15m cargo test -p interledger-stream
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          timeout 15m cargo test -p interledger-stream
+
       - name: Test --features strict
-        run: timeout 15m cargo test -p interledger-stream --features strict
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          timeout 15m cargo test -p interledger-stream --features strict
+
       - name: Test --features roundtrip-only
-        run: timeout 15m cargo test -p interledger-stream --features roundtrip-only
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          timeout 15m cargo test -p interledger-stream --features roundtrip-only
 
   interledger-btp:
     env:
@@ -122,9 +148,16 @@ jobs:
         uses: Swatinem/rust-cache@v1
 
       - name: Test
-        run: timeout 15m cargo test -p interledger-btp
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          timeout 15m cargo test -p interledger-btp
+
       - name: Test --features strict
-        run: timeout 15m cargo test -p interledger-btp --features strict
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          timeout 15m cargo test -p interledger-btp --features strict
 
   build:
     # Repo requires a `build` job to succeed in order to merge into master.
@@ -156,7 +189,10 @@ jobs:
         uses: Swatinem/rust-cache@v1
 
       - name: Build
-        run: cargo build --bin ilp-settlement-ethereum
+        run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
+          cargo build --bin ilp-settlement-ethereum
 
       - name: Upload settlement-engine artifact
         uses: actions/upload-artifact@v2
@@ -187,6 +223,8 @@ jobs:
 
       - name: Build binaries
         run: |
+          export OPENSSL_INCLUDE_DIR=$PWD/openssl-1.1/include
+          export OPENSSL_LIB_DIR=$PWD/openssl-1.1/lib
           mkdir -p ~/.interledger/bin
           cargo build --bin ilp-node --bin ilp-cli
           mv target/debug/ilp-node ~/.interledger/bin

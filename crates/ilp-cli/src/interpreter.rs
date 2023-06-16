@@ -92,7 +92,7 @@ impl NodeClient<'_> {
         let (auth, mut args) = extract_args(matches);
         let user = args.remove("username").unwrap(); // infallible unwrap
         self.client
-            .get(&format!("{}/accounts/{}/balance", self.url, user))
+            .get(format!("{}/accounts/{}/balance", self.url, user))
             .bearer_auth(auth)
             .send()
             .map_err(Error::Send)
@@ -102,7 +102,7 @@ impl NodeClient<'_> {
     fn post_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         self.client
-            .post(&format!("{}/accounts/", self.url))
+            .post(format!("{}/accounts/", self.url))
             .bearer_auth(auth)
             .json(&args)
             .send()
@@ -113,7 +113,7 @@ impl NodeClient<'_> {
     fn put_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         self.client
-            .put(&format!("{}/accounts/{}", self.url, args["username"]))
+            .put(format!("{}/accounts/{}", self.url, args["username"]))
             .bearer_auth(auth)
             .json(&args)
             .send()
@@ -124,7 +124,7 @@ impl NodeClient<'_> {
     fn delete_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         self.client
-            .delete(&format!("{}/accounts/{}", self.url, args["username"]))
+            .delete(format!("{}/accounts/{}", self.url, args["username"]))
             .bearer_auth(auth)
             .send()
             .map_err(Error::Send)
@@ -150,7 +150,7 @@ impl NodeClient<'_> {
         url.set_scheme(scheme).map_err(Error::Scheme)?;
 
         let request: Request = Request::builder()
-            .uri(url.into_string())
+            .uri(url.to_string())
             .header("Authorization", format!("Bearer {}", auth))
             .body(())?;
 
@@ -178,7 +178,7 @@ impl NodeClient<'_> {
         url.set_scheme(scheme).map_err(Error::Scheme)?;
 
         let request: Request = Request::builder()
-            .uri(url.into_string())
+            .uri(url.to_string())
             .header("Authorization", format!("Bearer {}", auth))
             .body(())?;
 
@@ -193,7 +193,7 @@ impl NodeClient<'_> {
     fn get_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         self.client
-            .get(&format!("{}/accounts/{}", self.url, args["username"]))
+            .get(format!("{}/accounts/{}", self.url, args["username"]))
             .bearer_auth(auth)
             .send()
             .map_err(Error::Send)
@@ -203,7 +203,7 @@ impl NodeClient<'_> {
     fn get_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, _) = extract_args(matches);
         self.client
-            .get(&format!("{}/accounts", self.url))
+            .get(format!("{}/accounts", self.url))
             .bearer_auth(auth)
             .send()
             .map_err(Error::Send)
@@ -214,7 +214,7 @@ impl NodeClient<'_> {
         let (auth, mut args) = extract_args(matches);
         let user = args.remove("username").unwrap(); // infallible unwrap
         self.client
-            .put(&format!("{}/accounts/{}/settings", self.url, user))
+            .put(format!("{}/accounts/{}/settings", self.url, user))
             .bearer_auth(auth)
             .json(&args)
             .send()
@@ -226,7 +226,7 @@ impl NodeClient<'_> {
         let (auth, mut args) = extract_args(matches);
         let user = args.remove("sender_username").unwrap(); // infallible unwrap
         self.client
-            .post(&format!("{}/accounts/{}/payments", self.url, user))
+            .post(format!("{}/accounts/{}/payments", self.url, user))
             .bearer_auth(auth)
             .json(&args)
             .send()
@@ -236,7 +236,7 @@ impl NodeClient<'_> {
     // GET /rates
     fn get_rates(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
-            .get(&format!("{}/rates", self.url))
+            .get(format!("{}/rates", self.url))
             .send()
             .map_err(Error::Send)
     }
@@ -245,7 +245,7 @@ impl NodeClient<'_> {
     fn put_rates(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, rate_pairs) = unflatten_pairs(matches);
         self.client
-            .put(&format!("{}/rates", self.url))
+            .put(format!("{}/rates", self.url))
             .bearer_auth(auth)
             .json(&rate_pairs)
             .send()
@@ -255,7 +255,7 @@ impl NodeClient<'_> {
     // GET /routes
     fn get_routes(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
-            .get(&format!("{}/routes", self.url))
+            .get(format!("{}/routes", self.url))
             .send()
             .map_err(Error::Send)
     }
@@ -264,7 +264,7 @@ impl NodeClient<'_> {
     fn put_route_static(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         self.client
-            .put(&format!("{}/routes/static/{}", self.url, args["prefix"]))
+            .put(format!("{}/routes/static/{}", self.url, args["prefix"]))
             .bearer_auth(auth)
             .body(args["destination"].to_string())
             .send()
@@ -275,7 +275,7 @@ impl NodeClient<'_> {
     fn put_routes_static(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, route_pairs) = unflatten_pairs(matches);
         self.client
-            .put(&format!("{}/routes/static", self.url))
+            .put(format!("{}/routes/static", self.url))
             .bearer_auth(auth)
             .json(&route_pairs)
             .send()
@@ -286,7 +286,7 @@ impl NodeClient<'_> {
     fn put_settlement_engines(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, engine_pairs) = unflatten_pairs(matches);
         self.client
-            .put(&format!("{}/settlement/engines", self.url))
+            .put(format!("{}/settlement/engines", self.url))
             .bearer_auth(auth)
             .json(&engine_pairs)
             .send()
@@ -297,7 +297,7 @@ impl NodeClient<'_> {
     fn put_tracing_level(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         self.client
-            .put(&format!("{}/tracing-level", self.url))
+            .put(format!("{}/tracing-level", self.url))
             .bearer_auth(auth)
             .body(args["level"].to_owned())
             .send()
@@ -307,7 +307,7 @@ impl NodeClient<'_> {
     // GET /
     fn get_root(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
-            .get(&format!("{}/", self.url))
+            .get(format!("{}/", self.url))
             .send()
             .map_err(Error::Send)
     }
@@ -329,7 +329,7 @@ impl NodeClient<'_> {
         let asset = cli_args["asset"].to_lowercase();
         let foreign_args: XpringResponse = self
             .client
-            .get(&format!("https://xpring.io/api/accounts/{}", asset))
+            .get(format!("https://xpring.io/api/accounts/{}", asset))
             .send()?
             .json()
             .map_err(Error::Testnet)?;
@@ -349,7 +349,7 @@ impl NodeClient<'_> {
 
         let result = self
             .client
-            .post(&format!("{}/accounts/", self.url))
+            .post(format!("{}/accounts/", self.url))
             .bearer_auth(auth)
             .json(&args)
             .send();
